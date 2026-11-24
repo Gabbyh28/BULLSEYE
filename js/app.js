@@ -1158,9 +1158,21 @@ function renderStats(main) {
     if (b.dataset.sPlayer) {
       state.statsPlayer = b.dataset.sPlayer;
       renderStats(main);
-    } else if (b.dataset.s === 'reset' && confirm(t('resetConfirm'))) {
-      resetStats();
-      renderStats(main);
+    } else if (b.dataset.s === 'reset') {
+      if (b.dataset.armed) {
+        resetStats();
+        renderStats(main);
+      } else {
+        b.dataset.armed = '1';
+        b.textContent = t('resetConfirm');
+        b.classList.add('armed');
+        setTimeout(() => {
+          if (!b.isConnected) return;
+          delete b.dataset.armed;
+          b.textContent = t('resetStats');
+          b.classList.remove('armed');
+        }, 4000);
+      }
     }
   };
 }

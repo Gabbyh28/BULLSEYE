@@ -1210,3 +1210,5 @@ button:disabled { cursor: not-allowed; }
   .controls .btn:not(.next-btn) span { display: none; }
   .controls .btn[data-g='miss'] span { display: inline; }
 }
+
+.btn.armed { border-color: var(--hot); color: var(--hot); }
