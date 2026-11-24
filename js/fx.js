@@ -110,6 +110,20 @@ export const sfx = {
     if (!c) return;
     noise(c, { dur: 0.25, gain: 0.08, freq: 900, q: 0.6, swell: true });
   },
+  launch() {
+    const c = audio();
+    if (!c) return;
+    noise(c, { dur: 0.5, gain: 0.05, freq: 2600, q: 0.8, swell: true });
+    tone(c, { type: 'sine', f0: 500, f1: 1400, dur: 0.45, gain: 0.025 });
+  },
+  boom() {
+    const c = audio();
+    if (!c) return;
+    noise(c, { dur: 0.9, gain: 0.32, type: 'lowpass', freq: 380, q: 0.4 });
+    tone(c, { type: 'sine', f0: 90, f1: 38, dur: 0.6, gain: 0.3 });
+    // crackle
+    for (let i = 0; i < 6; i++) noise(c, { t: 0.15 + Math.random() * 0.6, dur: 0.03, gain: 0.08, freq: 3000 + Math.random() * 2000, q: 2 });
+  },
   /** The "Olé!" played on any hit on 1 (same clip as Darts Arena). */
   ole() {
     const c = audio();
@@ -343,4 +357,140 @@ export function haptic(ms = 12) {
   } catch {
     /* noop */
   }
+}
+
+/* ── Fireworks ── */
+let fwCanvas = null;
+let rockets = [];
+let sparks = [];
+let fwRaf = 0;
+let fwUntil = 0;
+
+/** Rockets launch from the bottom of the screen and burst into glittering shells. */
+export function fireworks(duration = 4200, colors) {
+  if (document.documentElement.dataset.motion === 'off') return;
+  if (!fwCanvas) {
+    fwCanvas = document.createElement('canvas');
+    fwCanvas.className = 'fireworks';
+    document.body.appendChild(fwCanvas);
+  }
+  const css = getComputedStyle(document.documentElement);
+  const palette = colors ?? [css.getPropertyValue('--accent'), css.getPropertyValue('--accent-2'), css.getPropertyValue('--hot'), '#ffffff', '#ffd166'].map((s) => s.trim() || '#fff');
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  fwCanvas.width = innerWidth * dpr;
+  fwCanvas.height = innerHeight * dpr;
+  fwCanvas.dataset.dpr = dpr;
+  fwUntil = performance.now() + duration;
+  const launch = (delay) =>
+    setTimeout(() => {
+      const w = fwCanvas.width;
+      const h = fwCanvas.height;
+      rockets.push({
+        x: w * (0.15 + Math.random() * 0.7),
+        y: h + 10,
+        vx: (Math.random() - 0.5) * 3 * dpr,
+        vy: -(h * 0.0135 + Math.random() * h * 0.004),
+        color: palette[Math.floor(Math.random() * palette.length)],
+        fuse: 0,
+      });
+      sfx.launch?.();
+    }, delay);
+  const count = Math.max(5, Math.round(duration / 380));
+  for (let i = 0; i < count; i++) launch(i * (duration / count) * 0.85 + Math.random() * 180);
+  if (!fwRaf) fwRaf = requestAnimationFrame(fwLoop);
+}
+
+function burst(r) {
+  const dpr = +fwCanvas.dataset.dpr || 1;
+  const n = 70 + Math.floor(Math.random() * 50);
+  const speed = (3.2 + Math.random() * 2.6) * dpr;
+  const ring = Math.random() < 0.3;
+  const second = Math.random() < 0.5 ? '#ffffff' : r.color;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.08;
+    const s = ring ? speed : speed * (0.35 + Math.random() * 0.75);
+    sparks.push({
+      x: r.x,
+      y: r.y,
+      px: r.x,
+      py: r.y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      life: 1,
+      decay: 0.009 + Math.random() * 0.012,
+      color: i % 4 === 0 ? second : r.color,
+      glitter: Math.random() < 0.35,
+    });
+  }
+  sfx.boom?.();
+}
+
+function fwLoop() {
+  const c = fwCanvas.getContext('2d');
+  const dpr = +fwCanvas.dataset.dpr || 1;
+  c.globalCompositeOperation = 'destination-out';
+  c.fillStyle = 'rgba(0,0,0,0.22)';
+  c.fillRect(0, 0, fwCanvas.width, fwCanvas.height);
+  c.globalCompositeOperation = 'lighter';
+  c.lineCap = 'round';
+
+  rockets = rockets.filter((r) => {
+    const px = r.x;
+    const py = r.y;
+    r.x += r.vx;
+    r.y += r.vy;
+    r.vy *= 0.985;
+    r.vy += 0.06 * dpr;
+    c.strokeStyle = '#ffe9c4';
+    c.lineWidth = 2.2 * dpr;
+    c.beginPath();
+    c.moveTo(px, py);
+    c.lineTo(r.x, r.y);
+    c.stroke();
+    if (r.vy > -1.2 * dpr) {
+      burst(r);
+      return false;
+    }
+    return true;
+  });
+
+  sparks = sparks.filter((p) => {
+    p.px = p.x;
+    p.py = p.y;
+    p.vx *= 0.975;
+    p.vy = p.vy * 0.975 + 0.045 * dpr;
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) return false;
+    const flick = p.glitter ? (Math.random() < 0.5 ? 1 : 0.25) : 1;
+    c.globalAlpha = Math.max(0, p.life) * flick;
+    c.strokeStyle = p.color;
+    c.lineWidth = (1.4 + p.life * 1.6) * dpr;
+    c.beginPath();
+    c.moveTo(p.px, p.py);
+    c.lineTo(p.x, p.y);
+    c.stroke();
+    return true;
+  });
+  c.globalAlpha = 1;
+
+  if (rockets.length || sparks.length || performance.now() < fwUntil) fwRaf = requestAnimationFrame(fwLoop);
+  else {
+    fwRaf = 0;
+    c.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+  }
+}
+
+/* ── Winner banner ── */
+export function winnerBanner({ name, label, color = 'var(--accent)', avatar = '🏆', duration = 3200 }) {
+  document.querySelectorAll('.winner-banner').forEach((n) => n.remove());
+  const n = document.createElement('div');
+  n.className = 'winner-banner';
+  n.style.setProperty('--pc', color);
+  const safe = String(name).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  n.innerHTML = `<div class="wb-inner"><span class="wb-avatar">${avatar}</span><small>${label}</small><strong>${safe}</strong><i class="wb-shine"></i></div>`;
+  document.body.appendChild(n);
+  setTimeout(() => n.classList.add('out'), duration);
+  setTimeout(() => n.remove(), duration + 600);
 }

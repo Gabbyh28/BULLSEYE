@@ -1301,3 +1301,99 @@ button:disabled { cursor: not-allowed; }
 }
 .matchbar, .controls, .keypad, .scores, .feed { position: relative; z-index: 1; }
 .board-wrap .callouts, .board-wrap .toast-slot { z-index: 6; }
+
+/* ─── winning-dart cinematic ─── */
+.cine-stage {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  background: radial-gradient(ellipse at 50% 40%, color-mix(in srgb, var(--bg-2), #fff 4%), var(--bg) 75%);
+  animation: fade .35s ease both;
+}
+.cine-stage.out { animation: fade .3s ease reverse both; }
+.b3d-canvas.cine {
+  position: absolute !important;
+  inset: 0 !important;
+  left: 0 !important;
+  top: 0 !important;
+  width: 100% !important;
+  height: 100% !important;
+  transform: none !important;
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+}
+.cine-bar {
+  position: absolute;
+  left: 0;
+  right: 0;
+  z-index: 2;
+  height: clamp(48px, 11vh, 96px);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+  background: #000;
+  color: #fff;
+}
+.cine-bar.top { top: 0; padding-top: env(safe-area-inset-top, 0px); animation: bar-in .5s var(--ease) both; }
+.cine-bar.bottom { bottom: 0; padding-bottom: env(safe-area-inset-bottom, 0px); animation: bar-in-b .5s var(--ease) both; }
+@keyframes bar-in { from { transform: translateY(-100%); } }
+@keyframes bar-in-b { from { transform: translateY(100%); } }
+.cine-tag { display: inline-flex; align-items: center; gap: .6rem; font-weight: 800; letter-spacing: .22em; font-size: .78rem; color: rgba(255, 255, 255, .8); }
+.cine-tag i { width: 9px; height: 9px; border-radius: 50%; background: #ff3b3b; animation: live 1.2s infinite; }
+.cine-bar b { font-family: var(--display); font-weight: 900; font-size: clamp(1.4rem, 3.4vw, 2.4rem); letter-spacing: .04em; color: color-mix(in srgb, var(--pc), #fff 35%); }
+[lang='he'] .cine-bar b { font-family: var(--font); }
+.cine-speed { font-family: var(--display); font-weight: 800; font-size: 1.3rem; letter-spacing: .1em; color: rgba(255, 255, 255, .55); }
+.cine-skip { padding: .5rem 1.1rem; border-radius: 999px; border: 1px solid rgba(255, 255, 255, .3); color: #fff; font-weight: 700; }
+.cine-skip:hover { background: rgba(255, 255, 255, .12); }
+
+.fireworks { position: fixed; inset: 0; width: 100vw; height: 100vh; pointer-events: none; z-index: 82; }
+.confetti { z-index: 83; }
+
+.winner-banner {
+  position: fixed;
+  inset: 0;
+  z-index: 84;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  padding: 16px;
+}
+.wb-inner {
+  position: relative;
+  display: grid;
+  justify-items: center;
+  gap: .3rem;
+  padding: 1.6rem 3rem 1.8rem;
+  border-radius: 28px;
+  overflow: hidden;
+  text-align: center;
+  background: linear-gradient(160deg, rgba(10, 10, 16, .82), rgba(10, 10, 16, .66));
+  border: 1px solid color-mix(in srgb, var(--pc), transparent 40%);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, .55);
+  backdrop-filter: blur(10px);
+  animation: wb-in .7s var(--spring) both;
+}
+.winner-banner.out .wb-inner { animation: wb-out .55s var(--ease) forwards; }
+.wb-avatar { font-size: 3.2rem; line-height: 1; animation: wb-bounce 1.2s var(--spring) .3s both; }
+.wb-inner small { font-size: .8rem; font-weight: 800; letter-spacing: .24em; text-transform: uppercase; color: rgba(255, 255, 255, .7); }
+.wb-inner strong {
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: clamp(3rem, 11vw, 6.5rem);
+  line-height: .95;
+  background: linear-gradient(180deg, #fff 25%, color-mix(in srgb, var(--pc), #fff 15%));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  max-width: 80vw;
+  overflow-wrap: anywhere;
+}
+[lang='he'] .wb-inner strong { font-family: var(--font); }
+.wb-shine { position: absolute; inset: 0; background: linear-gradient(105deg, transparent 35%, rgba(255, 255, 255, .22) 50%, transparent 65%); transform: translateX(-120%); animation: wb-shine 1.6s .5s ease-in-out both; }
+@keyframes wb-in { from { opacity: 0; transform: scale(.5) translateY(30px); } }
+@keyframes wb-out { to { opacity: 0; transform: scale(1.1); filter: blur(6px); } }
+@keyframes wb-bounce { from { transform: scale(0) rotate(-30deg); } }
+@keyframes wb-shine { to { transform: translateX(120%); } }

@@ -4,7 +4,7 @@ import {
   nextTurn, commitLeg, activePlayer, targetsFor, aroundTarget, activeBracketMatch, legsTarget, setsTarget,
 } from './engine.js';
 import { Board, BOARD_SKINS } from './board.js';
-import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, loadClip } from './fx.js';
+import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, loadClip, fireworks, winnerBanner } from './fx.js';
 import { load, save, flush, recordLeg, recordMatch, resetStats } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
 
@@ -187,6 +187,7 @@ function destroyBoards() {
 }
 
 function go(view) {
+  state.cinematic = false;
   clearTimeout(state.autoTimer);
   clearInterval(state.demoTimer);
   state.view = view;
@@ -602,7 +603,7 @@ function manualDart(v, m) {
 
 function onDart(dart) {
   const m = match();
-  if (!m || m.finished || leg().winners || $('.modal.open')) return;
+  if (!m || m.finished || leg().winners || $('.modal.open') || state.cinematic) return;
   if (leg().turnDone) advance(true);
   clearTimeout(state.autoTimer);
   state.undo.push(clone(m));
@@ -612,13 +613,54 @@ function onDart(dart) {
   const { leg: next, events } = throwDart(before, dart);
   m.leg = next;
   const color = pinfo(player.pid).color;
-  state.board.addDart(dart, { color, index: next.turn.length - 1 });
-  if (dart.value === 1) sfx.ole();
-  else sfx.hit(dart);
-  haptic(dart.mult >= 2 ? 20 : 10);
+  const hitSound = () => (dart.value === 1 ? sfx.ole() : sfx.hit(dart));
   save();
+
+  // The winning dart gets the full cinematic on the 3D board.
+  if (next.winners && state.board?.playWinningThrow && prefs.motion !== 'off') {
+    state.cinematic = true;
+    updateGame({ popDart: next.turn.length - 1 });
+    const pi = pinfo(player.pid);
+    sfx.whoosh();
+    state.board
+      .playWinningThrow(dart, {
+        color,
+        title: t('winningDart'),
+        name: pi.name,
+        skip: t('skip'),
+        onImpact: () => {
+          hitSound();
+          haptic(40);
+          celebrate(events, next, player);
+        },
+      })
+      .then(() => {
+        state.cinematic = false;
+        setTimeout(showResult, 1400);
+      });
+    return;
+  }
+
+  state.board.addDart(dart, { color, index: next.turn.length - 1 });
+  hitSound();
+  haptic(dart.mult >= 2 ? 20 : 10);
   updateGame({ popDart: next.turn.length - 1 });
   handleEvents(events, before, next, player);
+}
+
+/** Fireworks, confetti, fanfare and a banner naming the winner. */
+function celebrate(events, after, player) {
+  const has = (e) => events.includes(e);
+  const record = after.turns.at(-1);
+  const winners = after.winners.map(pinfo);
+  const names = winners.map((w) => w.name).join(' & ');
+  const label = has('shanghai') ? t('shanghaiCall') : has('checkout') ? `${t('gameShot')} · ${record.startScore}` : t('winner');
+  sfx.fanfare(true);
+  confetti(240);
+  fireworks(4600);
+  winnerBanner({ name: names, label, color: winners[0]?.color, avatar: winners.length === 1 ? winners[0].avatar : '🏆', duration: 3400 });
+  const he = getLang() === 'he';
+  say(has('checkout') ? (he ? `סגירה! ${names} ניצח` : `Game shot! ${names} wins!`) : he ? `${names} ניצח` : `${names} wins!`, { interrupt: true });
 }
 
 function handleEvents(events, before, after, player) {
@@ -634,15 +676,8 @@ function handleEvents(events, before, after, player) {
       $('.board-wrap')?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-10px)' }, { transform: 'translateX(9px)' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(0)' }], { duration: 380 });
     }, 230);
   } else if (has('checkout') || has('win') || has('shanghai')) {
-    setTimeout(() => {
-      sfx.fanfare(true);
-      const title = has('shanghai') ? t('shanghaiCall') : has('checkout') ? t('gameShot') : '🏆';
-      const sub = has('checkout') ? `${esc(name)} · ${record.startScore}` : esc(after.winners.map((w) => pinfo(w).name).join(' & '));
-      callout(host, { title, sub, tone: 'gold', duration: 1300 });
-      confetti(180);
-      say(has('checkout') ? (getLang() === 'he' ? `סגירה! ${record.startScore}` : `Game shot! ${name}`) : name);
-    }, 260);
-    setTimeout(showResult, 1500);
+    setTimeout(() => celebrate(events, after, player), 260);
+    setTimeout(showResult, 3600);
     return;
   } else if (has('180')) {
     setTimeout(() => {
@@ -714,6 +749,7 @@ function announceTurn() {
 }
 
 function undo() {
+  if (state.cinematic) return;
   clearTimeout(state.autoTimer);
   const prev = state.undo.pop();
   if (!prev) return;
@@ -1039,9 +1075,8 @@ function showResult() {
       </div>
     </div>`, { dismissable: false, onClick: onResultClick });
 
-  if (final) {
-    confetti(260);
-    sfx.fanfare(true);
+  if (final && !state.celebrated) {
+    confetti(160);
   }
 }
 
@@ -1309,7 +1344,7 @@ function favBeds(s) {
 /* ───────────────────────── keyboard ───────────────────────── */
 
 function onKey(e) {
-  if (e.target.matches('input, textarea')) return;
+  if (e.target.matches('input, textarea') || state.cinematic) return;
   if (e.key === 'Escape' && $('.modal.open') && state.modalDismissable) return closeModal();
   if (state.view !== 'game') return;
   if ((e.key === 'z' && (e.ctrlKey || e.metaKey)) || e.key === 'Backspace') {

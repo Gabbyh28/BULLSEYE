@@ -742,6 +742,17 @@ export class Board3D {
 
   cameraPose(t, dt = 1 / 60) {
     const cam = this.camera;
+    if (this.cine) {
+      const pos = this.cine.pos.clone();
+      if (this.shake > 0.001) {
+        pos.x += (Math.random() - 0.5) * this.shake;
+        pos.y += (Math.random() - 0.5) * this.shake;
+        this.shake *= Math.exp(-dt * 7);
+      }
+      cam.position.copy(pos);
+      cam.lookAt(this.cine.look);
+      return;
+    }
     const half = HOST_HALF * OVERSCAN;
     const dist = half / Math.tan((cam.fov / 2) * DEG);
     let pos;
@@ -992,7 +1003,348 @@ export class Board3D {
     return entry;
   }
 
-  impact(entry) {
+  /* ───────────── winning-dart cinematic ───────────── */
+
+  gamePose() {
+    const half = HOST_HALF * OVERSCAN;
+    const dist = half / Math.tan((26 / 2) * DEG);
+    return { pos: new THREE.Vector3(1.3, -1.25, dist), look: new THREE.Vector3(0, 0, 0) };
+  }
+
+  setCameraFov(fov, aspect) {
+    this.camera.fov = fov;
+    this.camera.aspect = aspect;
+    this.camera.updateProjectionMatrix();
+  }
+
+  enterCinema({ title = 'WINNING DART', name = '', skip = 'Skip', color = '#f5c46b' }) {
+    const stage = document.createElement('div');
+    stage.className = 'cine-stage';
+    stage.style.setProperty('--pc', color);
+    const esc = (v) => String(v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+    stage.innerHTML = `
+      <div class="cine-bar top"><span class="cine-tag"><i></i>${esc(title)}</span><b>${esc(name)}</b></div>
+      <div class="cine-bar bottom"><span class="cine-speed" dir="ltr">0.25×</span><button type="button" class="cine-skip">${esc(skip)} ›</button></div>`;
+    document.body.appendChild(stage);
+    stage.prepend(this.canvas);
+    this.canvas.classList.add('cine');
+    stage.querySelector('.cine-skip').addEventListener('click', () => this.cine && (this.cine.skip = true));
+    this.cineKey = (e) => e.key === 'Escape' && this.cine && (this.cine.skip = true);
+    document.addEventListener('keydown', this.cineKey);
+    this.stage = stage;
+    this.sizeCinema = () => {
+      const w = innerWidth;
+      const h = innerHeight;
+      this.renderer.setSize(w, h, false);
+      this.setCameraFov(38, w / h);
+    };
+    this.sizeCinema();
+    addEventListener('resize', this.sizeCinema);
+
+    // Set dressing only the cinematic sees: a floor, a side wall and a key light on the thrower.
+    const sc = this.sc ?? SCENES.championship;
+    const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: sc.b, roughness: 0.45, metalness: 0.35 }));
+    floor.rotation.x = -Math.PI / 2;
+    floor.position.set(0, -5.2, 10);
+    const side = new THREE.Mesh(new THREE.PlaneGeometry(40, 14), this.wallMat);
+    side.rotation.y = Math.PI / 2;
+    side.position.set(-7, 1, 10);
+    const light = new THREE.SpotLight(sc.key, 2.6, 0, 0.6, 0.8, 0);
+    light.position.set(6, 6, 17);
+    light.target.position.set(1.3, -0.5, 13);
+    const rim = new THREE.SpotLight(sc.fill, 1.6, 0, 0.7, 0.9, 0);
+    rim.position.set(-4, 4, 9);
+    rim.target.position.set(1.3, -0.5, 13);
+    this.cineSet = [floor, side, light, light.target, rim, rim.target];
+    this.cineSet.forEach((o) => this.scene.add(o));
+  }
+
+  exitCinema() {
+    if (!this.stage) return;
+    removeEventListener('resize', this.sizeCinema);
+    document.removeEventListener('keydown', this.cineKey);
+    this.canvas.classList.remove('cine');
+    this.host.prepend(this.canvas);
+    this.stage.remove();
+    this.stage = null;
+    this.cineSet.forEach((o) => {
+      this.scene.remove(o);
+      if (o.isMesh) {
+        o.geometry.dispose();
+        if (o.material !== this.wallMat) o.material.dispose();
+      }
+    });
+    this.cineSet = [];
+    this.setCameraFov(26, 1);
+    this.resize();
+  }
+
+  buildArm(color) {
+    const skin = new THREE.MeshStandardMaterial({ color: '#e2ab88', roughness: 0.55, metalness: 0 });
+    const sleeveMat = new THREE.MeshStandardMaterial({ color: shade(color, -40), roughness: 0.85, metalness: 0 });
+    const root = new THREE.Group();
+    const pivot = new THREE.Group();
+    root.add(pivot);
+    const L = 2.0;
+    const fore = new THREE.Mesh(new THREE.CapsuleGeometry(0.17, L - 0.25, 8, 20), skin);
+    fore.position.y = L / 2;
+    fore.scale.set(1, 1, 0.82);
+    pivot.add(fore);
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.27, 0.31, 0.85, 24), sleeveMat);
+    sleeve.position.y = 0.18;
+    pivot.add(sleeve);
+
+    const hand = new THREE.Group();
+    hand.position.y = L - 0.05;
+    pivot.add(hand);
+    const palm = new THREE.Mesh(new THREE.SphereGeometry(1, 28, 18), skin);
+    palm.scale.set(0.25, 0.33, 0.14);
+    palm.position.set(0, 0.24, -0.02);
+    hand.add(palm);
+    const finger = (x, len, curl, y0 = 0.5) => {
+      const g = new THREE.Group();
+      g.position.set(x, y0, -0.06);
+      g.rotation.x = -curl;
+      const seg = new THREE.Mesh(new THREE.CapsuleGeometry(0.055, len, 6, 12), skin);
+      seg.position.y = len / 2 + 0.04;
+      g.add(seg);
+      hand.add(g);
+      return g;
+    };
+    finger(-0.15, 0.22, 2.1, 0.46);
+    finger(-0.05, 0.28, 1.9);
+    finger(0.06, 0.3, 1.45);
+    finger(0.16, 0.28, 1.1);
+    const thumb = new THREE.Group();
+    thumb.position.set(0.22, 0.22, -0.06);
+    thumb.rotation.set(-1.0, 0, -0.55);
+    const th = new THREE.Mesh(new THREE.CapsuleGeometry(0.065, 0.26, 6, 12), skin);
+    th.position.y = 0.17;
+    thumb.add(th);
+    hand.add(thumb);
+    // Grip point between thumb and index finger; the dart points at the board (-z).
+    const slot = new THREE.Group();
+    slot.position.set(0.26, 0.52, -0.33);
+    slot.rotation.x = Math.PI / 2;
+    hand.add(slot);
+
+    const elbow = new THREE.Mesh(new THREE.SphereGeometry(0.27, 18, 12), sleeveMat);
+    root.add(elbow);
+    const upDir = new THREE.Vector3(0.25, -0.55, 1).normalize();
+    const upper = new THREE.Mesh(new THREE.CapsuleGeometry(0.25, 1.9, 8, 20), sleeveMat);
+    upper.quaternion.setFromUnitVectors(new THREE.Vector3(0, 1, 0), upDir);
+    upper.position.copy(upDir.clone().multiplyScalar(1.15));
+    root.add(upper);
+    root.traverse((o) => o.isMesh && (o.castShadow = true));
+    return { root, pivot, slot, mats: [skin, sleeveMat] };
+  }
+
+  /**
+   * The winning dart: a profile shot of the throw, a slow-motion chase of the
+   * dart to the board, a close-up on the winning bed, then back to the game view.
+   * Resolves when the camera is back. onImpact fires as the dart sticks.
+   */
+  playWinningThrow(dart, { color = '#f5c46b', title, name, skip, onImpact } = {}) {
+    return new Promise((resolve) => {
+      if (dart.x == null) {
+        onImpact?.();
+        resolve();
+        return;
+      }
+      this.clearHover();
+      const T = new THREE.Vector3(dart.x * U, -dart.y * U, -0.035);
+      const finalDir = new THREE.Vector3(Math.sin(-3 * DEG), Math.sin(16 * DEG), 1).normalize();
+      const finalQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), finalDir);
+      this.enterCinema({ title, name, skip, color });
+
+      const arm = this.buildArm(color);
+      const HW = new THREE.Vector3(1.3, -0.1, 13.4); // hand at the moment of release
+      arm.root.position.copy(HW).add(new THREE.Vector3(0, -2.4, 0));
+      this.scene.add(arm.root);
+      const model = buildDart(color);
+      model.position.y = -0.55;
+      arm.slot.add(model);
+
+      // Trail of glowing points behind the flights
+      const TRAIL = 48;
+      const tpos = new Float32Array(TRAIL * 3);
+      const tcol = new Float32Array(TRAIL * 3);
+      const tg = new THREE.BufferGeometry();
+      tg.setAttribute('position', new THREE.BufferAttribute(tpos, 3));
+      tg.setAttribute('color', new THREE.BufferAttribute(tcol, 3));
+      const tm = new THREE.PointsMaterial({ size: 0.09, vertexColors: true, transparent: true, opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false, map: this.dust.material.map });
+      const trail = new THREE.Points(tg, tm);
+      trail.frustumCulled = false;
+      trail.visible = false;
+      this.scene.add(trail);
+      const trailColor = new THREE.Color(color);
+      const history = [];
+
+      const cine = {
+        pos: HW.clone().add(new THREE.Vector3(4.8, 0.1, 0.5)),
+        look: HW.clone().add(new THREE.Vector3(0, -0.4, -0.5)),
+        skip: false,
+      };
+      this.cine = cine;
+      this.setDisabled(true);
+
+      const RELEASE = 1700;
+      const FLIGHT = 3000;
+      const HOLD = 1500;
+      const RETURN = 1300;
+      const t0 = performance.now();
+      let last = t0;
+      let holder = null;
+      let R = null;
+      let impactAt = 0;
+      let returnAt = 0;
+      let from = null;
+      const lerp = (a, b, k) => a + (b - a) * k;
+      const easeIn = (k) => k * k * k;
+      const easeInOut = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+      const armAngle = (ms) => {
+        if (ms < 1100) return lerp(0.05, 0.62, easeInOut(ms / 1100));
+        if (ms < RELEASE) return lerp(0.62, -0.32, easeIn((ms - 1100) / (RELEASE - 1100)));
+        return lerp(-0.32, -1.05, easeOut(clamp((ms - RELEASE) / 700, 0, 1)));
+      };
+      const pathAt = (u) => new THREE.Vector3().lerpVectors(R, T, u).add(new THREE.Vector3(0, 0.95 * 4 * u * (1 - u), 0));
+
+      const release = () => {
+        model.updateWorldMatrix(true, false);
+        const wp = new THREE.Vector3();
+        const wq = new THREE.Quaternion();
+        model.getWorldPosition(wp);
+        model.getWorldQuaternion(wq);
+        holder = new THREE.Group();
+        holder.position.copy(wp);
+        holder.quaternion.copy(wq);
+        model.position.set(0, 0, 0);
+        model.quaternion.identity();
+        holder.add(model);
+        this.dartGroup.add(holder);
+        R = wp.clone();
+        trail.visible = true;
+      };
+
+      const stick = () => {
+        holder.position.copy(T);
+        holder.quaternion.copy(finalQ);
+        const entry = { holder, model, dart };
+        this.darts.push(entry);
+        this.impact(entry, { label: false });
+        this.shake = 0.14;
+        impactAt = performance.now();
+        this.scene.remove(arm.root);
+        trail.visible = false;
+        const sp = this.stage?.querySelector('.cine-speed');
+        if (sp) sp.textContent = '1×';
+        onImpact?.();
+      };
+
+      const finish = () => {
+        this.scene.remove(trail);
+        tg.dispose();
+        tm.dispose();
+        arm.root.traverse((o) => o.isMesh && o.geometry.dispose());
+        arm.mats.forEach((m) => m.dispose());
+        this.cine = null;
+        this.setDisabled(false);
+        this.shadowDirty = true;
+        resolve();
+      };
+
+      this.anims.push((now) => {
+        const dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+        const ms = now - t0;
+        const k = 1 - Math.exp(-dt * 6.5);
+
+        if (cine.skip && !returnAt) {
+          if (!holder) release();
+          if (!impactAt) stick();
+          this.stage?.classList.add('out');
+          this.exitCinema();
+          returnAt = now;
+          from = { pos: cine.pos.clone(), look: cine.look.clone() };
+        }
+
+        // 1. Wind-up and throw, seen in profile
+        if (!holder) {
+          arm.pivot.rotation.x = armAngle(ms);
+          // Track the hand so it stays framed through the wind-up and throw.
+          const hand = arm.slot.getWorldPosition(new THREE.Vector3());
+          const kk = 1 - Math.exp(-dt * 5);
+          const want = hand.clone().add(new THREE.Vector3(lerp(4.8, 4.0, clamp(ms / RELEASE, 0, 1)), 0.2, 0.5));
+          cine.pos.lerp(want, kk);
+          cine.look.lerp(hand.clone().add(new THREE.Vector3(0, -0.35, -0.5)), kk);
+          if (ms >= RELEASE) release();
+          return true;
+        }
+        if (!impactAt) arm.pivot.rotation.x = armAngle(ms);
+
+        // 2. Slow-motion flight with a chase camera
+        if (!impactAt) {
+          const u = clamp((ms - RELEASE) / FLIGHT, 0, 1);
+          const p = pathAt(u);
+          const ahead = pathAt(Math.min(1, u + 0.01));
+          const vel = ahead.sub(p);
+          holder.position.copy(p);
+          if (vel.lengthSq() > 1e-10) {
+            const q = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), vel.normalize().negate());
+            holder.quaternion.copy(u > 0.88 ? q.slerp(finalQ, (u - 0.88) / 0.12) : q);
+          }
+          model.userData.flights.rotation.y += dt * 2.2;
+          // trail
+          const tail = new THREE.Vector3(0, 1.45, 0).applyQuaternion(holder.quaternion).add(holder.position);
+          history.unshift(tail);
+          if (history.length > TRAIL) history.length = TRAIL;
+          for (let i = 0; i < TRAIL; i++) {
+            const h = history[i] ?? tail;
+            tpos.set([h.x, h.y, h.z], i * 3);
+            const f = 1 - i / TRAIL;
+            tcol.set([trailColor.r * f, trailColor.g * f, trailColor.b * f], i * 3);
+          }
+          tg.attributes.position.needsUpdate = true;
+          tg.attributes.color.needsUpdate = true;
+
+          const off = new THREE.Vector3(lerp(2.4, 1.35, u), lerp(0.7, 0.42, u), lerp(1.2, 1.9, u));
+          cine.pos.lerp(p.clone().add(off), k);
+          cine.look.lerp(p.clone().lerp(T, 0.3), k * 1.4);
+          if (u >= 1) stick();
+          return true;
+        }
+
+        // 3. Hold on the winning bed, pushing in slowly
+        if (!returnAt) {
+          const h = clamp((now - impactAt) / HOLD, 0, 1);
+          const want = T.clone().add(new THREE.Vector3(lerp(1.35, 1.0, h), lerp(0.42, 0.3, h), lerp(1.9, 1.45, h)));
+          cine.pos.lerp(want, k);
+          cine.look.lerp(T, k);
+          if (h >= 1) {
+            this.stage?.classList.add('out');
+            this.exitCinema();
+            returnAt = now;
+            from = { pos: cine.pos.clone(), look: cine.look.clone() };
+          }
+          return true;
+        }
+
+        // 4. Back to the throwing view
+        const r = clamp((now - returnAt) / RETURN, 0, 1);
+        const e = easeInOut(r);
+        const g = this.gamePose();
+        cine.pos.lerpVectors(from.pos, g.pos, e);
+        cine.look.lerpVectors(from.look, g.look, e);
+        if (r >= 1) {
+          finish();
+          return false;
+        }
+        return true;
+      });
+    });
+  }
+
+  impact(entry, { label = true } = {}) {
     const { holder, dart } = entry;
     this.shake = dart.mult >= 2 ? 0.05 : 0.025;
     // Wobble
@@ -1040,6 +1392,7 @@ export class Board3D {
       return true;
     });
     // Floating label
+    if (!label) return;
     const at = this.project(holder.position);
     const lab = document.createElement('div');
     lab.className = `b3d-label m${dart.mult}`;
@@ -1087,6 +1440,8 @@ export class Board3D {
   setHeat() {}
 
   destroy() {
+    if (this.stage) this.exitCinema();
+    this.cine = null;
     this.dead = true;
     cancelAnimationFrame(this.raf);
     this.ro?.disconnect();
