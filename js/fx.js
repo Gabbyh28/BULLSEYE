@@ -110,7 +110,62 @@ export const sfx = {
     if (!c) return;
     noise(c, { dur: 0.25, gain: 0.08, freq: 900, q: 0.6, swell: true });
   },
+  /** The "Olé!" played on any hit on 1 (same clip as Darts Arena). */
+  ole() {
+    const c = audio();
+    if (!c) return;
+    loadClip('ole').then((buf) => {
+      if (buf) playBuffer(c, buf, 1);
+      else playElement('ole');
+    });
+  },
 };
+
+/* ── Recorded clips ── */
+// Ogg/Opus first (the original file); MP3 for browsers that can't decode it.
+const CLIPS = { ole: ['sounds/ole.ogg', 'sounds/ole.mp3'] };
+const clipCache = new Map();
+
+export function loadClip(name) {
+  if (clipCache.has(name)) return clipCache.get(name);
+  const job = (async () => {
+    const c = audio();
+    if (!c) return null;
+    for (const url of CLIPS[name] ?? []) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.arrayBuffer();
+        return await new Promise((ok, fail) => c.decodeAudioData(data, ok, fail));
+      } catch {
+        /* try the next format */
+      }
+    }
+    return null;
+  })();
+  clipCache.set(name, job);
+  return job;
+}
+
+function playBuffer(c, buf, gain) {
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const g = c.createGain();
+  g.gain.value = gain;
+  src.connect(g).connect(master);
+  src.start();
+}
+
+function playElement(name) {
+  try {
+    const a = new Audio();
+    const [ogg, mp3] = CLIPS[name];
+    a.src = a.canPlayType('audio/ogg; codecs=opus') ? ogg : mp3;
+    a.play().catch(() => {});
+  } catch {
+    /* no audio */
+  }
+}
 
 /* ── Caller voice ── */
 let voices = [];

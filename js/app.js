@@ -4,7 +4,7 @@ import {
   nextTurn, commitLeg, activePlayer, targetsFor, aroundTarget, activeBracketMatch, legsTarget, setsTarget,
 } from './engine.js';
 import { Board, BOARD_SKINS } from './board.js';
-import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus } from './fx.js';
+import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, loadClip } from './fx.js';
 import { load, save, flush, recordLeg, recordMatch, resetStats } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
 
@@ -63,6 +63,7 @@ function boot() {
   go('lobby');
   document.addEventListener('keydown', onKey);
   document.addEventListener('pointerdown', unlockSpeech, { capture: true, passive: true });
+  document.addEventListener('pointerdown', () => prefs.sound && loadClip('ole'), { capture: true, passive: true, once: true });
   document.addEventListener('keydown', unlockSpeech, { capture: true });
   window.addEventListener('beforeunload', flush);
   document.addEventListener('visibilitychange', () => document.hidden && flush());
@@ -612,7 +613,8 @@ function onDart(dart) {
   m.leg = next;
   const color = pinfo(player.pid).color;
   state.board.addDart(dart, { color, index: next.turn.length - 1 });
-  sfx.hit(dart);
+  if (dart.value === 1) sfx.ole();
+  else sfx.hit(dart);
   haptic(dart.mult >= 2 ? 20 : 10);
   save();
   updateGame({ popDart: next.turn.length - 1 });
