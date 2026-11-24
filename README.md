@@ -1,6 +1,6 @@
 # 🎯 BULLSEYE — Darts Scoring Arena
 
-A live darts scorer with a hand-built, animated dartboard. Tap exactly where each dart lands. BULLSEYE scores it, suggests checkouts, calls the big moments and keeps lifetime stats.
+A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand-built SVG board). Tap exactly where each dart lands. BULLSEYE scores it, suggests checkouts, calls the big moments and keeps lifetime stats.
 
 ## Features
 
@@ -16,7 +16,7 @@ A live darts scorer with a hand-built, animated dartboard. Tap exactly where eac
 
 ## Run it
 
-It is a static site with no build step and no dependencies:
+It is a static site with no build step. three.js is vendored in `vendor/three` (MIT), so nothing loads from a CDN:
 
 ```bash
 python3 -m http.server 8000
@@ -29,7 +29,8 @@ Then open http://localhost:8000. To deploy, enable GitHub Pages on the branch, o
 | File | What it does |
 | --- | --- |
 | `js/engine.js` | Pure rules engine: board geometry, all game modes, checkouts, legs/sets, brackets |
-| `js/board.js` | SVG dartboard: sisal texture, raised wires, lighting, dart flight animation, heatmap |
+| `js/board3d.js` | 3D board (three.js): PBR sisal and chrome spider, LED surround, spotlights with beams, shadows, bloom, flying 3D darts |
+| `js/board.js` | 2D SVG board: fallback without WebGL, and the stats heatmap |
 | `js/app.js` | Screens (lobby, live game, results, stats) and game flow |
 | `js/fx.js` | Web Audio sound effects, caller voice, confetti, callouts |
 | `js/storage.js` | localStorage persistence and lifetime player stats |

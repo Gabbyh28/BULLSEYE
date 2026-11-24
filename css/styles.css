@@ -772,11 +772,11 @@ button:disabled { cursor: not-allowed; }
 .board-wrap {
   position: relative;
   width: min(100%, calc(100dvh - 150px), 860px);
-  animation: board-in 1s var(--ease) both;
-  perspective: 900px;
+  animation: board-in .9s var(--ease) both;
 }
+/* Flat (2D) intro only: a 3D CSS transform here would skew taps on the WebGL board. */
 @keyframes board-in {
-  from { opacity: 0; transform: perspective(900px) rotateX(38deg) translateY(40px) scale(.86); filter: blur(6px); }
+  from { opacity: 0; transform: translateY(24px) scale(.94); }
 }
 .aim-hint { margin: .6rem 0 0; font-size: .82rem; color: var(--muted); letter-spacing: .04em; }
 
@@ -1253,3 +1253,51 @@ button:disabled { cursor: not-allowed; }
 .voice-help { font-size: .85rem; color: var(--muted); }
 .voice-help summary { cursor: pointer; color: var(--text); font-weight: 600; }
 .voice-help ul { margin: .5rem 0 0; padding-inline-start: 1.1rem; display: grid; gap: .35rem; line-height: 1.45; }
+
+/* ─── 3D board ─── */
+.board-host.board3d { touch-action: none; user-select: none; -webkit-user-select: none; cursor: crosshair; }
+.board-host.board3d.disabled { cursor: default; }
+.board-host.demo.board3d { cursor: default; }
+.b3d-canvas {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  pointer-events: none;
+  -webkit-mask-image: radial-gradient(closest-side, #000 86%, transparent 100%);
+  mask-image: radial-gradient(closest-side, #000 86%, transparent 100%);
+}
+.b3d-overlay { position: absolute; inset: 0; pointer-events: none; z-index: 2; }
+.b3d-label {
+  position: absolute;
+  transform: translate(-50%, -100%);
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: clamp(1.4rem, 3.2vw, 2.1rem);
+  color: #fff;
+  text-shadow: 0 2px 0 rgba(0, 0, 0, .6), 0 0 18px rgba(0, 0, 0, .6);
+  -webkit-text-stroke: 1px rgba(0, 0, 0, .35);
+  animation: b3d-label 1.15s var(--ease) forwards;
+  white-space: nowrap;
+}
+.b3d-label.m2, .b3d-label.m3 { color: var(--accent); text-shadow: 0 2px 0 rgba(0, 0, 0, .6), 0 0 22px var(--accent); }
+@keyframes b3d-label {
+  0% { opacity: 0; transform: translate(-50%, -60%) scale(.6); }
+  20% { opacity: 1; transform: translate(-50%, -150%) scale(1.15); }
+  100% { opacity: 0; transform: translate(-50%, -260%) scale(1); }
+}
+.b3d-loupe {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  padding: .35rem .8rem;
+  border-radius: 12px;
+  font-family: var(--display);
+  font-weight: 900;
+  font-size: 1.5rem;
+  color: #fff;
+  background: rgba(8, 8, 12, .85);
+  border: 1.5px solid var(--accent);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, .5);
+}
+.matchbar, .controls, .keypad, .scores, .feed { position: relative; z-index: 1; }
+.board-wrap .callouts, .board-wrap .toast-slot { z-index: 6; }

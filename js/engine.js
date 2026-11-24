@@ -2,13 +2,15 @@
 
 export const SECTORS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
 
-// Regulation radii in millimetres (board is drawn in these units).
+// Board radii in millimetres (the board is drawn in these units).
+// The treble, double and bull beds are wider than regulation (8mm rings,
+// 12.7mm bull) so they are easy to hit with a finger or a mouse.
 export const R = {
-  bull: 6.35,
-  outerBull: 15.9,
-  trebleIn: 99,
-  trebleOut: 107,
-  doubleIn: 162,
+  bull: 9,
+  outerBull: 20,
+  trebleIn: 95,
+  trebleOut: 110,
+  doubleIn: 155,
   doubleOut: 170,
 };
 

@@ -9,6 +9,19 @@ import { load, save, flush, recordLeg, recordMatch, resetStats } from './storage
 import { t, setLang, getLang } from './i18n.js';
 
 const data = load();
+
+/* The 3D board loads in the background; the 2D board covers until it's ready
+   and stays as the fallback when WebGL isn't available. */
+let Board3D = null;
+const board3dReady = (async () => {
+  try {
+    const m = await import('./board3d.js');
+    if (m.webglOK()) Board3D = m.Board3D;
+  } catch (e) {
+    console.warn('3D board unavailable, using 2D', e);
+  }
+  return Board3D;
+})();
 const THEMES = ['championship', 'neon', 'tavern', 'daylight', 'blaze', 'candy'];
 const AVATARS = ['🎯', '🦊', '🐯', '🦁', '🐺', '🦅', '🐉', '👑', '⚡', '🔥', '🚀', '🎸', '🍀', '🐙', '🦄', '👾', '🥷', '🧙'];
 const COLORS = ['#f5c46b', '#4fd1c5', '#ff6b8b', '#8b9dff', '#7ee081', '#ff9f43', '#c792ea', '#5ad2ff'];
@@ -138,13 +151,45 @@ function icon(name) {
 
 /* ───────────────────────── routing ───────────────────────── */
 
+function makeBoard(host, opts) {
+  if (Board3D && prefs.quality === 'high') {
+    try {
+      return new Board3D(host, opts);
+    } catch (e) {
+      console.warn('3D board failed, using 2D', e);
+      host.querySelectorAll('canvas, .b3d-overlay').forEach((n) => n.remove());
+    }
+  }
+  return new Board(host, opts);
+}
+
+/** Mount a board into state[key]; swap to 3D once the engine finishes loading. */
+function mountBoard(key, host, opts, after) {
+  state[key] = makeBoard(host, opts);
+  after?.(state[key]);
+  if (!state[key].is3D && prefs.quality === 'high' && !Board3D) {
+    board3dReady.then((B) => {
+      const cur = state[key];
+      if (!B || !cur || cur.host !== host || !host.isConnected) return;
+      cur.destroy();
+      state[key] = makeBoard(host, opts);
+      after?.(state[key]);
+    });
+  }
+}
+
+function destroyBoards() {
+  ['board', 'demo', 'statsBoard'].forEach((k) => {
+    state[k]?.destroy?.();
+    state[k] = null;
+  });
+}
+
 function go(view) {
   clearTimeout(state.autoTimer);
   clearInterval(state.demoTimer);
   state.view = view;
-  state.board = null;
-  state.demo = null;
-  state.statsBoard = null;
+  destroyBoards();
   const main = $('#view');
   main.className = `view view-${view}`;
   if (view === 'lobby') renderLobby(main);
@@ -247,8 +292,7 @@ function renderLobby(main) {
   renderArenas();
   updateSummary();
 
-  state.demo = new Board($('#demo-board'), { interactive: false, skin: prefs.theme });
-  state.demo.setQuality(prefs.quality === 'high' ? 'high' : 'low');
+  mountBoard('demo', $('#demo-board'), { interactive: false, skin: prefs.theme, cinematic: true });
   const demoThrow = () => {
     if (!state.demo) return;
     if (state.demo.darts.length >= 3) state.demo.clearDarts();
@@ -516,14 +560,11 @@ function renderGame(main) {
         <div class="feed panel" id="feed"></div>
       </aside>
     </section>`;
-  state.board = new Board($('#game-board'), {
-    skin: prefs.theme,
-    onHit: (d) => onDart(d),
-  });
-  state.board.setQuality(prefs.quality === 'high' ? 'high' : 'low');
-  state.board.showDarts(leg().turn, pinfo(activePlayer(leg()).pid).color);
   main.onclick = onGameClick;
-  updateGame();
+  mountBoard('board', $('#game-board'), { skin: prefs.theme, onHit: (d) => onDart(d) }, (b) => {
+    b.showDarts(leg().turn, pinfo(activePlayer(leg()).pid).color);
+    updateGame();
+  });
   if (leg().winners) setTimeout(showResult, 200);
   else if (!leg().turn.length) setTimeout(announceTurn, 700);
 }
@@ -1134,6 +1175,7 @@ function openSettings() {
     prefs[k] = k === 'motion' ? (v ? 'on' : 'off') : k === 'quality' ? (v ? 'high' : 'low') : v;
     save();
     applyPrefs();
+    if (k === 'quality' && state.view !== 'stats') go(state.view);
   };
   const prev = root.onclick;
   root.onclick = (e) => {

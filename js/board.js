@@ -201,6 +201,11 @@ export class Board {
     this.svg.style.setProperty('--glow', s.glow);
   }
 
+  destroy() {
+    this.svg.remove();
+    this.loupe = null;
+  }
+
   setQuality(q) {
     this.svg.classList.toggle('lite', q === 'low');
   }
