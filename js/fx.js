@@ -113,24 +113,40 @@ export const sfx = {
 };
 
 /* ── Caller voice ── */
-export function say(text) {
+let voices = [];
+const loadVoices = () => {
+  try {
+    voices = speechSynthesis.getVoices() || [];
+  } catch {
+    voices = [];
+  }
+};
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  loadVoices();
+  speechSynthesis.addEventListener?.('voiceschanged', loadVoices);
+}
+
+/**
+ * Speak a line. Lines queue one after another (e.g. "60" then the next
+ * player's name); pass { interrupt: true } to cut off whatever is playing.
+ * Hebrew is spoken with a Hebrew voice when the device has one; otherwise the
+ * line is still sent as he-IL so the system speech engine can handle it.
+ */
+export function say(text, { interrupt = false } = {}) {
   if (!settings.voice || !('speechSynthesis' in window)) return;
   try {
-    const u = new SpeechSynthesisUtterance(String(text));
-    const lang = settings.lang === 'he' ? 'he' : 'en';
-    const voices = speechSynthesis.getVoices();
-    const v = voices.find((x) => x.lang?.toLowerCase().startsWith(lang)) ?? null;
-    if (lang === 'he' && !v) {
-      // Fall back to English numerals rather than mispronouncing Hebrew.
-      if (/[֐-׿]/.test(text)) return;
-      u.lang = 'en-GB';
-    } else {
-      u.lang = lang === 'he' ? 'he-IL' : 'en-GB';
-      if (v) u.voice = v;
-    }
+    const line = String(text);
+    const hebrew = settings.lang === 'he' || /[֐-׿]/.test(line);
+    if (!voices.length) loadVoices();
+    const want = hebrew ? ['he', 'iw'] : ['en'];
+    const v = voices.find((x) => want.some((w) => (x.lang || '').toLowerCase().replace('_', '-').startsWith(w))) ?? null;
+    const u = new SpeechSynthesisUtterance(line);
+    u.lang = hebrew ? 'he-IL' : 'en-GB';
+    if (v) u.voice = v;
     u.rate = 1.02;
     u.pitch = 0.95;
-    speechSynthesis.cancel();
+    if (interrupt) speechSynthesis.cancel();
+    if (speechSynthesis.paused) speechSynthesis.resume();
     speechSynthesis.speak(u);
   } catch {
     /* speech not available */

@@ -43,6 +43,10 @@ function boot() {
   }
   applyPrefs();
   renderTopbar();
+  const tb = $('#topbar');
+  const setTop = () => document.documentElement.style.setProperty('--topbar-h', `${tb.offsetHeight}px`);
+  setTop();
+  if ('ResizeObserver' in window) new ResizeObserver(setTop).observe(tb);
   go('lobby');
   document.addEventListener('keydown', onKey);
   window.addEventListener('beforeunload', flush);
@@ -519,6 +523,7 @@ function renderGame(main) {
   main.onclick = onGameClick;
   updateGame();
   if (leg().winners) setTimeout(showResult, 200);
+  else if (!leg().turn.length) setTimeout(announceTurn, 700);
 }
 
 function onGameClick(e) {
@@ -580,7 +585,7 @@ function handleEvents(events, before, after, player) {
     setTimeout(() => {
       sfx.bust();
       callout(host, { title: t('bust'), sub: t('bustSub', { n: after.players.find((p) => p.pid === player.pid).score }), tone: 'bad' });
-      say(getLang() === 'he' ? 'נשרף' : 'Bust');
+      say(getLang() === 'he' ? 'נשרף' : 'Bust', { interrupt: true });
       $('.board-wrap')?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-10px)' }, { transform: 'translateX(9px)' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(0)' }], { duration: 380 });
     }, 230);
   } else if (has('checkout') || has('win') || has('shanghai')) {
@@ -599,7 +604,7 @@ function handleEvents(events, before, after, player) {
       sfx.fanfare(true);
       callout(host, { title: '180', sub: '★ ★ ★', tone: 'gold', duration: 1900 });
       confetti(220);
-      say(getLang() === 'he' ? 'מאה ושמונים!' : 'One hundred and eighty!');
+      say(getLang() === 'he' ? 'מאה ושמונים!' : 'One hundred and eighty!', { interrupt: true });
     }, 260);
   } else if (has('ton') && record) {
     setTimeout(() => {
@@ -646,6 +651,21 @@ function advance(silent = false) {
     toast(`<span class="toast-av" style="--pc:${p.color}">${p.avatar}</span><span><small>${t('upNext')}</small><b>${esc(p.name)}</b></span>`);
     sfx.whoosh();
   }
+  announceTurn();
+}
+
+/** Caller line before every turn: the player's name, plus what they need in X01. */
+function announceTurn() {
+  const L = leg();
+  if (!L || L.winners || L.turn.length) return;
+  const p = activePlayer(L);
+  const name = pinfo(p.pid).name;
+  const he = getLang() === 'he';
+  let line = he ? `התור של ${name}` : name;
+  if (isX01(L.mode) && p.score <= 170 && checkout(p.score, 3, L.doubleOut)) {
+    line += he ? `, נשארו ${p.score}` : `, you require ${p.score}`;
+  }
+  say(line);
 }
 
 function undo() {
@@ -748,6 +768,7 @@ function renderHero(opts) {
       <div class="who"><small><i class="live-dot"></i>${t('throwing')}</small><b>${esc(pi.name)}</b></div>
       <div class="big-num ${L.bust ? 'bust' : ''}" dir="ltr" data-v="${num}">${num}</div>
     </div>
+    ${L.mode === 'cricket' ? scoreline(L, p) : ''}
     <div class="dart-slots" dir="ltr">
       ${[0, 1, 2].map((i) => {
         const d = L.turn[i];
@@ -762,6 +783,24 @@ function renderHero(opts) {
     const from = Number(prevNum);
     if (!Number.isNaN(from)) countTo(host.querySelector('.big-num'), from, num);
   }
+}
+
+function scoreline(L, cur) {
+  const best = Math.max(...L.players.map((o) => o.score));
+  const leaders = L.players.filter((o) => o.score === best).length;
+  return `<div class="scoreline" style="--n:${L.players.length}">${L.players
+    .map((o) => {
+      const oi = pinfo(o.pid);
+      const lead = o.score === best && leaders === 1 && best > 0;
+      const closed = CRICKET_KEYS.filter((k) => o.marks[k] >= 3).length;
+      return `<div class="sl ${o === cur ? 'on' : ''} ${lead ? 'lead' : ''}" style="--pc:${oi.color}">
+        <span class="avatar xs">${oi.avatar}</span>
+        <b>${esc(oi.name)}</b>
+        <small dir="ltr">${closed}/7</small>
+        <em dir="ltr">${o.score}</em>
+      </div>`;
+    })
+    .join('')}</div>`;
 }
 
 function countTo(el, from, to) {
@@ -987,6 +1026,7 @@ function onResultClick(e) {
     updateGame();
     const p = pinfo(activePlayer(leg()).pid);
     toast(`<span class="toast-av" style="--pc:${p.color}">${p.avatar}</span><span><small>${t('upNext')}</small><b>${esc(p.name)}</b></span>`);
+    announceTurn();
   } else if (a === 'rematch') {
     const rm = data.match;
     data.match = createMatch(rm.config, rm.roster);

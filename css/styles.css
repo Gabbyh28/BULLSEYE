@@ -891,6 +891,27 @@ button:disabled { cursor: not-allowed; }
 }
 .big-num.bust { background: linear-gradient(180deg, #fff, var(--hot)); -webkit-background-clip: text; background-clip: text; }
 
+.scoreline { position: relative; display: grid; grid-template-columns: repeat(auto-fit, minmax(120px, 1fr)); gap: 6px; margin-top: .9rem; }
+.sl {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'av name pts' 'av closed pts';
+  align-items: center;
+  column-gap: .5rem;
+  padding: .4rem .65rem .4rem .45rem;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, .22);
+  border: 1px solid var(--line);
+  transition: background .3s, border-color .3s;
+}
+[data-theme='daylight'] .sl { background: rgba(20, 30, 40, .05); }
+.sl .avatar { grid-area: av; }
+.sl b { grid-area: name; font-size: .85rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.sl small { grid-area: closed; font-size: .7rem; color: var(--muted); font-family: var(--display); font-weight: 700; letter-spacing: .04em; }
+.sl em { grid-area: pts; font-style: normal; font-family: var(--display); font-weight: 900; font-size: 1.7rem; line-height: 1; font-variant-numeric: tabular-nums; }
+.sl.on { border-color: color-mix(in srgb, var(--pc), transparent 40%); background: color-mix(in srgb, var(--pc), transparent 84%); }
+.sl.lead em { color: var(--accent); }
+.sl.lead b::after { content: ' ★'; color: var(--accent); }
 .dart-slots { position: relative; display: grid; grid-template-columns: repeat(3, 1fr) 1.15fr; gap: 8px; margin-top: 1rem; }
 .slot {
   display: grid;
@@ -1159,7 +1180,19 @@ button:disabled { cursor: not-allowed; }
   .matchbar, .stage { grid-area: auto; }
   .side { display: contents; }
   .matchbar { order: 1; }
-  .hero-card { order: 2; }
+  .hero-card {
+    order: 2;
+    position: sticky;
+    top: calc(var(--topbar-h, 62px) - 1px);
+    z-index: 20;
+    padding: .8rem .9rem .75rem;
+    background: color-mix(in srgb, var(--bg-2), transparent 6%);
+  }
+  .hero-card .avatar.lg { width: 44px; height: 44px; font-size: 1.35rem; }
+  .hero-card .dart-slots { margin-top: .7rem; }
+  .hero-card .hero-hint { margin-top: .6rem; min-height: 0; }
+  .scoreline { margin-top: .7rem; grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
+  .sl em { font-size: 1.45rem; }
   .stage { order: 3; }
   .controls { order: 4; }
   .keypad { order: 5; }
