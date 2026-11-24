@@ -4,7 +4,7 @@ import {
   nextTurn, commitLeg, activePlayer, targetsFor, aroundTarget, activeBracketMatch, legsTarget, setsTarget,
 } from './engine.js';
 import { Board, BOARD_SKINS } from './board.js';
-import { sfx, say, confetti, callout, configureFx, haptic } from './fx.js';
+import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus } from './fx.js';
 import { load, save, flush, recordLeg, recordMatch, resetStats } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
 
@@ -49,6 +49,8 @@ function boot() {
   if ('ResizeObserver' in window) new ResizeObserver(setTop).observe(tb);
   go('lobby');
   document.addEventListener('keydown', onKey);
+  document.addEventListener('pointerdown', unlockSpeech, { capture: true, passive: true });
+  document.addEventListener('keydown', unlockSpeech, { capture: true });
   window.addEventListener('beforeunload', flush);
   document.addEventListener('visibilitychange', () => document.hidden && flush());
 }
@@ -1109,6 +1111,16 @@ function openSettings() {
       </div>
       ${row('sound', t('sound'))}
       ${row('voice', t('voice'))}
+      <div class="voice-check">
+        <p class="voice-status" id="voice-status">${voiceLine()}</p>
+        <button class="btn ghost sm" data-test-voice>${t('testVoice')}</button>
+        ${voiceStatus(prefs.lang).voice ? '' : `<details class="voice-help"><summary>${t('voiceHow')}</summary><ul>
+          <li><b>iPhone / iPad</b> · ${t('vhIos')}</li>
+          <li><b>Android</b> · ${t('vhAndroid')}</li>
+          <li><b>Windows</b> · ${t('vhWindows')}</li>
+          <li><b>Mac</b> · ${t('vhMac')}</li>
+        </ul></details>`}
+      </div>
       ${row('autoNext', t('autoNext'))}
       ${row('motion', t('motion'))}
       ${row('quality', t('quality'))}
@@ -1125,6 +1137,14 @@ function openSettings() {
   };
   const prev = root.onclick;
   root.onclick = (e) => {
+    if (e.target.closest('[data-test-voice]')) {
+      say(prefs.lang === 'he' ? `בדיקת קריין. התור של ${data.roster[0]?.name ?? 'גבי'}, נשארו 40` : `Caller check. ${data.roster[0]?.name ?? 'Player one'}, you require 40`, { interrupt: true, force: true });
+      setTimeout(() => {
+        const st = $('#voice-status');
+        if (st) st.innerHTML = voiceLine();
+      }, 400);
+      return;
+    }
     const l = e.target.closest('[data-lang]');
     if (l) {
       prefs.lang = l.dataset.lang;
@@ -1137,6 +1157,13 @@ function openSettings() {
     }
     prev(e);
   };
+}
+
+function voiceLine() {
+  const st = voiceStatus(prefs.lang);
+  if (!st.supported) return `<span class="bad">${t('voiceNone')}</span>`;
+  if (st.voice) return `<span class="good">✓</span> ${t('voiceFound')}: <b dir="ltr">${esc(st.voice)}</b>`;
+  return `<span class="bad">!</span> ${prefs.lang === 'he' ? t('voiceNoHe') : t('voiceNoEn')}`;
 }
 
 /* ───────────────────────── stats ───────────────────────── */

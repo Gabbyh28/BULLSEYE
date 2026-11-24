@@ -132,19 +132,68 @@ if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
  * Hebrew is spoken with a Hebrew voice when the device has one; otherwise the
  * line is still sent as he-IL so the system speech engine can handle it.
  */
-export function say(text, { interrupt = false } = {}) {
-  if (!settings.voice || !('speechSynthesis' in window)) return;
+const HEBREW_NAME = /hebrew|carmit|asaf|עברית/i;
+const keepAlive = new Set();
+let unlocked = false;
+
+function pickVoice(hebrew) {
+  if (!voices.length) loadVoices();
+  const norm = (v) => (v.lang || '').toLowerCase().replace('_', '-');
+  if (hebrew) {
+    return (
+      voices.find((v) => norm(v) === 'he-il' || norm(v) === 'iw-il') ??
+      voices.find((v) => norm(v).startsWith('he') || norm(v).startsWith('iw')) ??
+      voices.find((v) => HEBREW_NAME.test(v.name)) ??
+      null
+    );
+  }
+  return voices.find((v) => norm(v) === 'en-gb') ?? voices.find((v) => norm(v).startsWith('en')) ?? null;
+}
+
+/**
+ * Phones (iOS Safari especially) only allow speech that starts inside a tap.
+ * Speaking a silent line on the first tap unlocks it for the rest of the visit.
+ */
+export function unlockSpeech() {
+  if (unlocked || !('speechSynthesis' in window)) return;
+  unlocked = true;
+  try {
+    loadVoices();
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    keepAlive.add(u);
+    u.onend = u.onerror = () => keepAlive.delete(u);
+    speechSynthesis.speak(u);
+  } catch {
+    /* speech not available */
+  }
+}
+
+/** What the caller can do on this device, for the settings screen. */
+export function voiceStatus(lang) {
+  if (!('speechSynthesis' in window)) return { supported: false, voice: null };
+  const v = pickVoice(lang === 'he');
+  return { supported: true, voice: v ? v.name : null };
+}
+
+/**
+ * Speak a line. Lines queue one after another (e.g. "60" then the next
+ * player's name); pass { interrupt: true } to cut off whatever is playing.
+ */
+export function say(text, { interrupt = false, force = false } = {}) {
+  if ((!settings.voice && !force) || !('speechSynthesis' in window)) return;
   try {
     const line = String(text);
     const hebrew = settings.lang === 'he' || /[֐-׿]/.test(line);
-    if (!voices.length) loadVoices();
-    const want = hebrew ? ['he', 'iw'] : ['en'];
-    const v = voices.find((x) => want.some((w) => (x.lang || '').toLowerCase().replace('_', '-').startsWith(w))) ?? null;
+    const v = pickVoice(hebrew);
     const u = new SpeechSynthesisUtterance(line);
-    u.lang = hebrew ? 'he-IL' : 'en-GB';
+    u.lang = v?.lang?.replace('_', '-') || (hebrew ? 'he-IL' : 'en-GB');
     if (v) u.voice = v;
-    u.rate = 1.02;
-    u.pitch = 0.95;
+    u.rate = 1;
+    u.volume = 1;
+    // Chrome drops utterances that get garbage-collected mid-queue.
+    keepAlive.add(u);
+    u.onend = u.onerror = () => keepAlive.delete(u);
     if (interrupt) speechSynthesis.cancel();
     if (speechSynthesis.paused) speechSynthesis.resume();
     speechSynthesis.speak(u);

@@ -1245,3 +1245,11 @@ button:disabled { cursor: not-allowed; }
 }
 
 .btn.armed { border-color: var(--hot); color: var(--hot); }
+.voice-check { display: grid; gap: .6rem; justify-items: start; padding: .8rem 1rem; border-radius: 14px; background: var(--surface); border: 1px solid var(--line); }
+.voice-status { margin: 0; font-size: .9rem; color: var(--muted); line-height: 1.5; }
+.voice-status b { color: var(--text); }
+.voice-status .good { color: var(--good); font-weight: 800; }
+.voice-status .bad { color: var(--hot); font-weight: 800; }
+.voice-help { font-size: .85rem; color: var(--muted); }
+.voice-help summary { cursor: pointer; color: var(--text); font-weight: 600; }
+.voice-help ul { margin: .5rem 0 0; padding-inline-start: 1.1rem; display: grid; gap: .35rem; line-height: 1.45; }
