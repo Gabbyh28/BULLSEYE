@@ -804,7 +804,7 @@ button:disabled { cursor: not-allowed; }
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
-  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, .55)) drop-shadow(0 0 40px color-mix(in srgb, var(--c1), transparent 40%));
+  filter: drop-shadow(0 6px 0 rgba(0, 0, 0, .55)) drop-shadow(0 0 18px color-mix(in srgb, var(--c1), transparent 70%));
   -webkit-text-stroke: 1.5px rgba(255, 255, 255, .25);
 }
 [lang='he'] .callout strong { font-family: var(--font); font-weight: 900; font-size: clamp(3.5rem, 12vw, 8rem); }
@@ -826,7 +826,7 @@ button:disabled { cursor: not-allowed; }
   aspect-ratio: 1;
   translate: -50% -55%;
   border-radius: 50%;
-  background: repeating-conic-gradient(color-mix(in srgb, var(--c1), transparent 60%) 0 6deg, transparent 6deg 18deg);
+  background: repeating-conic-gradient(color-mix(in srgb, var(--c1), transparent 80%) 0 6deg, transparent 6deg 18deg);
   -webkit-mask: radial-gradient(closest-side, #000 20%, transparent 75%);
   mask: radial-gradient(closest-side, #000 20%, transparent 75%);
   animation: spin 6s linear infinite;
@@ -1280,7 +1280,7 @@ button:disabled { cursor: not-allowed; }
   animation: b3d-label 1.15s var(--ease) forwards;
   white-space: nowrap;
 }
-.b3d-label.m2, .b3d-label.m3 { color: var(--accent); text-shadow: 0 2px 0 rgba(0, 0, 0, .6), 0 0 22px var(--accent); }
+.b3d-label.m2, .b3d-label.m3 { color: var(--accent); text-shadow: 0 2px 0 rgba(0, 0, 0, .6), 0 0 10px rgba(0, 0, 0, .5); }
 @keyframes b3d-label {
   0% { opacity: 0; transform: translate(-50%, -60%) scale(.6); }
   20% { opacity: 1; transform: translate(-50%, -150%) scale(1.15); }

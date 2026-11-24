@@ -1,12 +1,9 @@
 // BULLSEYE — real-time 3D dartboard (three.js / WebGL).
 // Physically based board with sisal fibre, chrome spider and numbers, a pro
 // surround with an LED ring, spotlit wall with light beams, 3D darts with
-// shadows, bloom and filmic tone mapping. Same API as the SVG Board.
+// shadows and filmic tone mapping. Tuned for a steady 60fps: no post-processing,
+// shadows re-rendered only while darts move, adaptive resolution. Same API as the SVG Board.
 import * as THREE from 'three';
-import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
-import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
-import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
-import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { SECTORS, R, scoreAt } from './engine.js';
 import { BOARD_SKINS } from './board.js';
@@ -315,62 +312,68 @@ function sectorGeometry(value) {
 
 /* ───────────── the dart model ───────────── */
 
+// Geometry and materials are built once and shared by every dart, so a throw
+// allocates almost nothing and never triggers a shader compile mid-game.
+let SHARED = null;
+const shaftCache = new Map();
 const flightCache = new Map();
 
-function buildDart(color) {
-  const g = new THREE.Group();
-  const steel = new THREE.MeshStandardMaterial({ color: '#d7dde3', metalness: 1, roughness: 0.18 });
-  const tungsten = new THREE.MeshStandardMaterial({ color: '#8d959e', metalness: 1, roughness: 0.32 });
-  const shaftMat = new THREE.MeshStandardMaterial({ color: shade(color, -60), metalness: 0.85, roughness: 0.28 });
-
-  // Point (tip at y=0, body toward +y)
+function shared() {
+  if (SHARED) return SHARED;
   const point = new THREE.LatheGeometry(
     [new THREE.Vector2(0, 0), new THREE.Vector2(0.0045, 0.02), new THREE.Vector2(0.0105, 0.07), new THREE.Vector2(0.0115, 0.3)],
     12,
   );
-  g.add(new THREE.Mesh(point, steel));
-
-  // Knurled tungsten barrel
   const prof = [new THREE.Vector2(0.0115, 0.3), new THREE.Vector2(0.028, 0.34)];
   for (let y = 0.36; y < 0.76; y += 0.032) {
     prof.push(new THREE.Vector2(0.034, y), new THREE.Vector2(0.034, y + 0.02), new THREE.Vector2(0.03, y + 0.026));
   }
   prof.push(new THREE.Vector2(0.032, 0.78), new THREE.Vector2(0.018, 0.82), new THREE.Vector2(0.012, 0.83));
-  g.add(new THREE.Mesh(new THREE.LatheGeometry(prof, 24), tungsten));
-
-  // Shaft
-  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.0125, 0.42, 12), shaftMat);
-  shaft.position.y = 1.04;
-  g.add(shaft);
-
-  // Flights (standard shape, four wings)
-  if (!flightCache.has(color)) {
-    flightCache.set(
-      color,
-      new THREE.MeshPhysicalMaterial({
-        map: canvasTex(128, 256, (ctx, w, h) => drawFlight(ctx, w, h, color)),
-        roughness: 0.35,
-        clearcoat: 0.8,
-        clearcoatRoughness: 0.2,
-        side: THREE.DoubleSide,
-        emissive: new THREE.Color(color),
-        emissiveIntensity: 0.08,
-      }),
-    );
-  }
+  const barrel = new THREE.LatheGeometry(prof, 20);
+  const shaft = new THREE.CylinderGeometry(0.012, 0.0125, 0.42, 10);
+  shaft.translate(0, 1.04, 0);
   const shape = new THREE.Shape();
   shape.moveTo(0.012, 1.1);
   shape.lineTo(0.17, 1.34);
   shape.quadraticCurveTo(0.19, 1.4, 0.17, 1.5);
   shape.lineTo(0.012, 1.5);
   shape.closePath();
-  const fg = new THREE.ShapeGeometry(shape);
-  const pos = fg.attributes.position;
-  const uv = fg.attributes.uv;
+  const flight = new THREE.ShapeGeometry(shape);
+  const pos = flight.attributes.position;
+  const uv = flight.attributes.uv;
   for (let i = 0; i < pos.count; i++) uv.setXY(i, pos.getX(i) / 0.19, (pos.getY(i) - 1.1) / 0.4);
+  SHARED = {
+    point,
+    barrel,
+    shaft,
+    flight,
+    steel: new THREE.MeshStandardMaterial({ color: '#d7dde3', metalness: 1, roughness: 0.18 }),
+    tungsten: new THREE.MeshStandardMaterial({ color: '#8d959e', metalness: 1, roughness: 0.32 }),
+  };
+  return SHARED;
+}
+
+function buildDart(color) {
+  const S = shared();
+  if (!shaftCache.has(color)) shaftCache.set(color, new THREE.MeshStandardMaterial({ color: shade(color, -60), metalness: 0.85, roughness: 0.28 }));
+  if (!flightCache.has(color)) {
+    flightCache.set(
+      color,
+      new THREE.MeshStandardMaterial({
+        map: canvasTex(128, 256, (ctx, w, h) => drawFlight(ctx, w, h, color)),
+        roughness: 0.4,
+        metalness: 0,
+        side: THREE.DoubleSide,
+      }),
+    );
+  }
+  const g = new THREE.Group();
+  g.add(new THREE.Mesh(S.point, S.steel));
+  g.add(new THREE.Mesh(S.barrel, S.tungsten));
+  g.add(new THREE.Mesh(S.shaft, shaftCache.get(color)));
   const flights = new THREE.Group();
   for (let k = 0; k < 4; k++) {
-    const m = new THREE.Mesh(fg, flightCache.get(color));
+    const m = new THREE.Mesh(S.flight, flightCache.get(color));
     m.rotation.y = k * (Math.PI / 2) + Math.PI / 4;
     flights.add(m);
   }
@@ -407,6 +410,7 @@ export class Board3D {
     this.setSkin(this.opts.skin);
     if (this.opts.interactive) this.bindInput();
     this.observe();
+    this.precompile();
     this.loop = this.loop.bind(this);
     this.raf = requestAnimationFrame(this.loop);
     document.fonts?.ready?.then(() => !this.dead && this.paintNumbers());
@@ -414,12 +418,16 @@ export class Board3D {
 
   initRenderer() {
     const mobile = coarse();
-    const r = new THREE.WebGLRenderer({ antialias: false, alpha: true, powerPreference: 'high-performance' });
-    r.setPixelRatio(Math.min(devicePixelRatio || 1, mobile ? 1.6 : 2));
+    const r = new THREE.WebGLRenderer({ antialias: true, alpha: true, powerPreference: 'high-performance' });
+    this.maxPR = Math.min(devicePixelRatio || 1, mobile ? 1.5 : 1.75);
+    this.pr = this.maxPR;
+    r.setPixelRatio(this.pr);
     r.outputColorSpace = THREE.SRGBColorSpace;
     r.toneMapping = THREE.ACESFilmicToneMapping;
     r.shadowMap.enabled = true;
     r.shadowMap.type = THREE.PCFSoftShadowMap;
+    r.shadowMap.autoUpdate = false; // re-rendered only while something moves
+    r.shadowMap.needsUpdate = true;
     r.setClearColor(0x000000, 0);
     this.renderer = r;
     this.canvas = r.domElement;
@@ -434,13 +442,9 @@ export class Board3D {
     this.scene.environment = this.envTex;
     pmrem.dispose();
 
-    const rt = new THREE.WebGLRenderTarget(16, 16, { type: THREE.HalfFloatType, samples: mobile ? 2 : 4 });
-    this.composer = new EffectComposer(r, rt);
-    this.composer.addPass(new RenderPass(this.scene, this.camera));
-    this.bloom = new UnrealBloomPass(new THREE.Vector2(256, 256), 0.5, 0.4, 1.25);
-    this.composer.addPass(this.bloom);
-    this.composer.addPass(new OutputPass());
     this.mobile = mobile;
+    this.frameTimes = [];
+    this.lastScale = 0;
   }
 
   buildScene() {
@@ -527,6 +531,22 @@ export class Board3D {
     s.add(led);
     this.led = led;
 
+    // Soft halo around the LED ring (replaces a full-screen bloom pass).
+    const haloTex = canvasTex(512, 512, (ctx, w) => {
+      const c = w / 2;
+      const g = ctx.createRadialGradient(c, c, 0, c, c, c);
+      g.addColorStop(0, '#000');
+      g.addColorStop(0.86, '#000');
+      g.addColorStop(0.9375, '#fff');
+      g.addColorStop(1, '#000');
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, w, w);
+    }, { srgb: false });
+    this.haloMat = new THREE.MeshBasicMaterial({ color: '#ffffff', alphaMap: haloTex, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false });
+    const halo = new THREE.Mesh(new THREE.RingGeometry(2.72, 3.2, 160, 1), this.haloMat);
+    halo.position.z = 0.14;
+    s.add(halo);
+
     // Lights
     this.hemi = new THREE.HemisphereLight('#ffffff', '#000000', 0.25);
     s.add(this.hemi);
@@ -534,7 +554,7 @@ export class Board3D {
     this.key = new THREE.SpotLight('#ffffff', 2.0, 0, 0.42, 0.75, 0);
     this.key.position.set(4.2, 7.5, 7.5);
     this.key.castShadow = true;
-    this.key.shadow.mapSize.set(this.mobile ? 1024 : 2048, this.mobile ? 1024 : 2048);
+    this.key.shadow.mapSize.set(1024, 1024);
     this.key.shadow.bias = -0.0004;
     this.key.shadow.normalBias = 0.015;
     this.key.shadow.radius = 3;
@@ -581,7 +601,7 @@ export class Board3D {
     });
 
     // Dust motes drifting through the light
-    const N = this.mobile ? 220 : 420;
+    const N = this.mobile ? 110 : 200;
     const dp = new Float32Array(N * 3);
     this.dustVel = new Float32Array(N * 3);
     for (let i = 0; i < N; i++) {
@@ -605,7 +625,7 @@ export class Board3D {
     s.add(this.dust);
 
     // Interaction layers
-    this.hoverMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.3, blending: THREE.AdditiveBlending, depthWrite: false });
+    this.hoverMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.2, blending: THREE.AdditiveBlending, depthWrite: false });
     this.hover = new THREE.Mesh(new THREE.BufferGeometry(), this.hoverMat);
     this.hover.position.z = 0.003;
     this.hover.visible = false;
@@ -623,6 +643,20 @@ export class Board3D {
 
     this.plane = new THREE.Plane(new THREE.Vector3(0, 0, 1), 0);
     this.ray = new THREE.Raycaster();
+  }
+
+  /** Compile every shader up front so the first dart doesn't stutter. */
+  precompile() {
+    const probe = buildDart('#888888');
+    probe.position.set(0, 0, -5);
+    this.scene.add(probe);
+    try {
+      this.cameraPose(0, 0);
+      this.renderer.compile(this.scene, this.camera);
+    } catch {
+      /* compile is an optimisation only */
+    }
+    this.scene.remove(probe);
   }
 
   paintNumbers() {
@@ -657,7 +691,9 @@ export class Board3D {
     lctx.fillStyle = g;
     lctx.fillRect(0, 0, limg.width, limg.height);
     this.ledTex.needsUpdate = true;
-    this.ledMat.emissiveIntensity = sc.ledI;
+    this.ledMat.emissiveIntensity = sc.ledI * 0.5;
+    this.haloMat.color.set(sc.led).lerp(new THREE.Color(sc.led2), 0.3);
+    this.haloMat.opacity = Math.min(0.28, 0.08 + sc.bloom * 0.18);
     this.ledLight.color.set(sc.led);
     this.ledLight.intensity = sc.ledI * 0.1;
 
@@ -669,16 +705,16 @@ export class Board3D {
     this.hemi.color.set(sc.fill);
     this.hemi.intensity = sc.amb * 0.8;
     this.beams.forEach((b, i) => {
-      b.material.opacity = sc.beam * (i ? 0.7 : 1);
+      b.material.opacity = sc.beam * (i ? 0.4 : 0.6);
       b.material.color.set(i ? sc.fill : sc.key);
       b.visible = sc.beam > 0;
     });
-    this.bloom.strength = sc.bloom * 1.1;
     this.renderer.toneMappingExposure = sc.exposure * 0.9;
     const accent = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || sc.led;
     this.targetMat.color.set(accent);
     this.dust.material.color.set(sc.key);
     this.sc = sc;
+    this.shadowDirty = true;
   }
 
   setQuality() {}
@@ -697,13 +733,14 @@ export class Board3D {
     if (!w) return;
     const size = Math.round(w * OVERSCAN);
     this.size = size;
+    this.renderer.setPixelRatio(this.pr);
     this.renderer.setSize(size, size, false);
-    this.composer.setSize(size, size);
+    this.shadowDirty = true;
     this.canvas.style.width = `${OVERSCAN * 100}%`;
     this.canvas.style.height = `${OVERSCAN * 100}%`;
   }
 
-  cameraPose(t) {
+  cameraPose(t, dt = 1 / 60) {
     const cam = this.camera;
     const half = HOST_HALF * OVERSCAN;
     const dist = half / Math.tan((cam.fov / 2) * DEG);
@@ -718,14 +755,15 @@ export class Board3D {
       // Fly-in on first frames, then settle into the throwing view.
       const intro = easeOut(clamp(t / 1.4, 0, 1));
       this.introK = intro;
-      this.pointer.x += (this.pointer.tx - this.pointer.x) * 0.06;
-      this.pointer.y += (this.pointer.ty - this.pointer.y) * 0.06;
+      const k = 1 - Math.exp(-dt * 4.5);
+      this.pointer.x += (this.pointer.tx - this.pointer.x) * k;
+      this.pointer.y += (this.pointer.ty - this.pointer.y) * k;
       pos = new THREE.Vector3(1.3 + this.pointer.x * 0.3 + (1 - intro) * 6, -1.25 + this.pointer.y * 0.22 - (1 - intro) * 4, dist + (1 - intro) * 9);
     }
     if (this.shake > 0.001) {
       pos.x += (Math.random() - 0.5) * this.shake;
       pos.y += (Math.random() - 0.5) * this.shake;
-      this.shake *= 0.86;
+      this.shake *= Math.exp(-dt * 9);
     }
     cam.position.copy(pos);
     cam.lookAt(look);
@@ -735,17 +773,18 @@ export class Board3D {
     if (this.dead) return;
     this.raf = requestAnimationFrame(this.loop);
     if (!this.visible || document.hidden) return;
-    const dt = Math.min(0.05, this.clock.getDelta());
+    const raw = this.clock.getDelta();
+    const dt = Math.min(0.05, raw);
     const t = this.clock.elapsedTime;
-    this.cameraPose(t);
+    this.cameraPose(t, dt);
 
     // Animations
     const now = performance.now();
     this.anims = this.anims.filter((a) => a(now) !== false);
 
     // LED breathing + target pulse
-    if (this.sc) this.ledMat.emissiveIntensity = this.sc.ledI * (0.92 + Math.sin(t * 1.6) * 0.08);
-    this.targetMat.opacity = 0.08 + (Math.sin(t * 3.2) * 0.5 + 0.5) * 0.12;
+    if (this.sc) this.ledMat.emissiveIntensity = this.sc.ledI * 0.5 * (0.95 + Math.sin(t * 1.6) * 0.05);
+    this.targetMat.opacity = 0.05 + (Math.sin(t * 3.2) * 0.5 + 0.5) * 0.07;
 
     // Dust
     const p = this.dust.geometry.attributes.position;
@@ -760,7 +799,35 @@ export class Board3D {
     }
     p.needsUpdate = true;
 
-    this.composer.render(dt);
+    // Shadows only change when darts move.
+    const animating = this.anims.length > 0;
+    if (animating || this.wasAnimating || this.shadowDirty) {
+      this.renderer.shadowMap.needsUpdate = true;
+      this.shadowDirty = false;
+    }
+    this.wasAnimating = animating;
+
+    this.renderer.render(this.scene, this.camera);
+    this.adaptResolution(raw);
+  }
+
+  /** Lower the render resolution if the device can't keep ~50fps; raise it back when it can. */
+  adaptResolution(raw) {
+    if (raw <= 0 || raw > 0.25) return;
+    this.frameTimes.push(raw);
+    if (this.frameTimes.length < 40) return;
+    const avg = this.frameTimes.reduce((a, b) => a + b, 0) / this.frameTimes.length;
+    this.frameTimes.length = 0;
+    const now = performance.now();
+    if (avg > 0.02 && this.pr > 0.85) {
+      this.pr = Math.max(0.85, this.pr - 0.2);
+      this.lastScale = now;
+      this.resize();
+    } else if (avg < 0.0125 && this.pr < this.maxPR && now - this.lastScale > 4000) {
+      this.pr = Math.min(this.maxPR, this.pr + 0.1);
+      this.lastScale = now;
+      this.resize();
+    }
   }
 
   /* ── input ── */
@@ -1021,18 +1088,15 @@ export class Board3D {
   }
 
   removeDart(d) {
+    // Dart geometry and materials are shared, so there is nothing to dispose.
     this.dartGroup.remove(d.holder);
-    d.holder.traverse((o) => {
-      if (o.isMesh) {
-        o.geometry.dispose();
-        if (o.material !== flightCacheGet(o.material)) o.material.dispose?.();
-      }
-    });
+    this.shadowDirty = true;
   }
 
   showDarts(darts, color) {
     this.clearDarts(false);
     darts.forEach((d, i) => this.addDart(d, { animate: false, color, index: i }));
+    this.shadowDirty = true;
   }
 
   setHeat() {}
@@ -1043,6 +1107,7 @@ export class Board3D {
     this.ro?.disconnect();
     this.io?.disconnect();
     this.darts.forEach((d) => this.removeDart(d));
+    this.dartGroup.clear();
     this.scene.traverse((o) => {
       o.geometry?.dispose?.();
       const mats = Array.isArray(o.material) ? o.material : o.material ? [o.material] : [];
@@ -1052,16 +1117,10 @@ export class Board3D {
       });
     });
     this.envTex?.dispose();
-    this.composer.dispose?.();
     this.renderer.dispose();
     this.renderer.forceContextLoss?.();
     this.canvas.remove();
     this.overlay.remove();
     this.host.classList.remove('board3d');
   }
-}
-
-function flightCacheGet(mat) {
-  for (const m of flightCache.values()) if (m === mat) return m;
-  return null;
 }

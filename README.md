@@ -29,7 +29,7 @@ Then open http://localhost:8000. To deploy, enable GitHub Pages on the branch, o
 | File | What it does |
 | --- | --- |
 | `js/engine.js` | Pure rules engine: board geometry, all game modes, checkouts, legs/sets, brackets |
-| `js/board3d.js` | 3D board (three.js): PBR sisal and chrome spider, LED surround, spotlights with beams, shadows, bloom, flying 3D darts |
+| `js/board3d.js` | 3D board (three.js): PBR sisal and chrome spider, LED surround, spotlights with beams, cached shadows, adaptive resolution, flying 3D darts |
 | `js/board.js` | 2D SVG board: fallback without WebGL, and the stats heatmap |
 | `js/app.js` | Screens (lobby, live game, results, stats) and game flow |
 | `js/fx.js` | Web Audio sound effects, caller voice, confetti, callouts |
