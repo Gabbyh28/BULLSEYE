@@ -346,10 +346,6 @@ export class Board {
   impact(x, y, dart) {
     const ring = el('circle', { cx: x, cy: y, r: 2, class: `ripple m${dart.mult}` }, this.fxLayer);
     ring.animate([{ r: 2, opacity: 0.9 }, { r: dart.mult >= 2 ? 34 : 22, opacity: 0 }], { duration: 520, easing: 'cubic-bezier(.2,.7,.3,1)' }).onfinish = () => ring.remove();
-    if (dart.value) {
-      const flash = el('path', { d: bedPath(dart), class: `bed-flash m${dart.mult}` }, this.fxLayer);
-      flash.animate([{ opacity: 0.85 }, { opacity: 0 }], { duration: 650, easing: 'ease-out' }).onfinish = () => flash.remove();
-    }
     const tag = el('g', { class: `float-label m${dart.mult}`, transform: `translate(${x} ${y - 24})` }, this.fxLayer);
     const txt = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' }, tag);
     txt.textContent = dart.value ? (dart.points ? `${dart.label}` : dart.label) : 'MISS';

@@ -780,7 +780,12 @@ export class Board3D {
 
     // Animations
     const now = performance.now();
-    this.anims = this.anims.filter((a) => a(now) !== false);
+    // Run a snapshot so animations started inside a step (e.g. impact effects)
+    // are kept for the next frame instead of being lost.
+    const running = this.anims;
+    this.anims = [];
+    const alive = running.filter((a) => a(now) !== false);
+    this.anims = alive.concat(this.anims);
 
     // LED breathing + target pulse
     if (this.sc) this.ledMat.emissiveIntensity = this.sc.ledI * 0.5 * (0.95 + Math.sin(t * 1.6) * 0.05);
@@ -1034,26 +1039,6 @@ export class Board3D {
       m.opacity = 0.9 * (1 - k);
       return true;
     });
-    // Bed flash
-    const bg = bedGeometry(dart);
-    if (bg) {
-      const fm = new THREE.MeshBasicMaterial({ color: dart.mult >= 2 ? this.targetMat.color.clone() : new THREE.Color('#ffffff'), transparent: true, opacity: 0.7, blending: THREE.AdditiveBlending, depthWrite: false });
-      const flash = new THREE.Mesh(bg, fm);
-      flash.position.z = 0.004;
-      this.fx.add(flash);
-      const f0 = performance.now();
-      this.anims.push((now) => {
-        const k = (now - f0) / 650;
-        if (k >= 1) {
-          this.fx.remove(flash);
-          bg.dispose();
-          fm.dispose();
-          return false;
-        }
-        fm.opacity = 0.7 * (1 - easeOut(k));
-        return true;
-      });
-    }
     // Floating label
     const at = this.project(holder.position);
     const lab = document.createElement('div');
