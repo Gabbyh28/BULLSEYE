@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as E from '../js/engine.js';
-import { load, recordLeg, recordMatch, statsFor, exportBackup, readBackup, restoreBackup } from '../js/storage.js';
+import { load, recordLeg, recordMatch, statsFor, exportBackup, readBackup, restoreBackup, photoKey } from '../js/storage.js';
 
 const D = E.makeDart;
 const roster = [
@@ -51,11 +51,11 @@ test('knockout head-to-head uses every bracket match', () => {
 test('backup round-trips through readBackup and restoreBackup', () => {
   const data = load();
   data.roster = [{ id: 7, name: 'Noa', avatar: '🐯', color: '#ff6b8b' }];
-  data.photos = { 7: 'data:image/jpeg;base64,AAAA' };
+  data.photos = { noa: 'data:image/jpeg;base64,AAAA' };
   const text = exportBackup();
   const parsed = readBackup(text);
   assert.equal(parsed.data.roster[0].name, 'Noa');
-  assert.equal(parsed.data.photos['7'], 'data:image/jpeg;base64,AAAA');
+  assert.equal(parsed.data.photos.noa, 'data:image/jpeg;base64,AAAA');
   restoreBackup(parsed);
   assert.equal(load().roster[0].name, 'Noa');
   assert.equal(load().match, null, 'restore never brings back a live match');
@@ -88,4 +88,15 @@ test('readBackup cleans hostile or malformed fields', () => {
   assert.equal(data.stats.a.games, 0, 'non-numeric counters zeroed');
   assert.deepEqual(data.stats.a.beds, { T20: 2 });
   assert.deepEqual(data.stats.a.points, [[1, 2]]);
+});
+
+test('photos are saved per name: case and spaces do not matter', () => {
+  assert.equal(photoKey('  Gabby '), 'gabby');
+  assert.equal(photoKey('GABBY'), photoKey('gabby'));
+});
+
+test('older backups keyed by player id move to the player name', () => {
+  const old = { app: 'BULLSEYE', data: { roster: [{ id: 3, name: 'Maya', avatar: '🚀', color: '#7ee081' }], photos: { 3: 'data:image/png;base64,BBBB' } } };
+  const { data } = readBackup(JSON.stringify(old));
+  assert.deepEqual(data.photos, { maya: 'data:image/png;base64,BBBB' });
 });

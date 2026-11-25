@@ -54,3 +54,18 @@ export function callUpNext({ name, require, lang }) {
 export function callGameOn(lang) {
   say(isHe(lang) ? 'המשחק מתחיל!' : 'Game on!', { rate: 0.9, pitch: 1.1 });
 }
+
+/** Walk-on: "Introducing... Gabby!" */
+export function callIntro(name, lang) {
+  if (isHe(lang)) {
+    say('ועכשיו...', { interrupt: true, rate: 0.85 });
+    say(`${name}!`, { rate: 0.75, pitch: 1.2 });
+  } else {
+    say('Introducing...', { interrupt: true, rate: 0.85 });
+    say(`${name}!`, { rate: 0.75, pitch: 1.2 });
+  }
+}
+
+export function callVersus(a, b, lang) {
+  say(isHe(lang) ? `${a} נגד ${b}` : `${a}, versus, ${b}`, { interrupt: true, rate: 0.9, pitch: 1.1 });
+}

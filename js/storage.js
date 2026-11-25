@@ -4,7 +4,7 @@ import { isX01 } from './engine.js';
 const KEY = 'bullseye:v1';
 
 const defaults = () => ({
-  prefs: { theme: 'championship', lang: null, sound: true, voice: true, autoNext: true, motion: 'on', quality: 'high', input: 'board' },
+  prefs: { theme: 'championship', lang: null, sound: true, voice: true, autoNext: true, motion: 'on', quality: 'high', input: 'board', walkOn: true },
   config: { mode: '501', doubleOut: true, format: 'single', legs: 3, sets: 1 },
   roster: [],
   photos: {},
@@ -14,6 +14,23 @@ const defaults = () => ({
 });
 
 let cache = null;
+
+/** Photos are saved per name (case and surrounding spaces ignored). */
+export const photoKey = (name) => String(name ?? '').trim().toLowerCase();
+
+/** Older saves keyed photos by player id; move them to the player's name. */
+function migratePhotos(d) {
+  const photos = d.photos ?? {};
+  for (const p of d.roster ?? []) {
+    const byId = photos[p.id];
+    if (byId && p.name) {
+      photos[photoKey(p.name)] ??= byId;
+      delete photos[p.id];
+    }
+  }
+  for (const k of Object.keys(photos)) if (/^\d+$/.test(k)) delete photos[k];
+  d.photos = photos;
+}
 
 export function load() {
   if (cache) return cache;
@@ -27,6 +44,7 @@ export function load() {
   } catch {
     /* storage unavailable: run in-memory */
   }
+  migratePhotos(data);
   cache = data;
   return data;
 }
@@ -219,7 +237,7 @@ export function readBackup(text) {
   }));
   const photos = {};
   for (const [k, v] of Object.entries(src.photos ?? {})) {
-    if (typeof v === 'string' && v.length < 400000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v)) photos[k] = v;
+    if (typeof v === 'string' && v.length < 400000 && /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(v)) photos[photoKey(str(k, 24))] = v;
   }
   const stats = {};
   for (const [k, v] of Object.entries(src.stats ?? {})) {
@@ -252,7 +270,9 @@ export function readBackup(text) {
   config.doubleOut = typeof src.config?.doubleOut === 'boolean' ? src.config.doubleOut : config.doubleOut;
   config.legs = Math.min(11, Math.max(1, num(src.config?.legs) || 1));
   config.sets = Math.min(7, Math.max(1, num(src.config?.sets) || 1));
-  return { exportedAt: str(o.exportedAt, 40), data: { prefs, config, roster, photos, stats, history } };
+  const out = { prefs, config, roster, photos, stats, history };
+  migratePhotos(out);
+  return { exportedAt: str(o.exportedAt, 40), data: out };
 }
 
 /** Replace everything on this device with a cleaned backup (from readBackup). */

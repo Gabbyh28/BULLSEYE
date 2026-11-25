@@ -1503,6 +1503,84 @@ export class Board3D {
     });
   }
 
+  /**
+   * Instant replay: the camera swoops in on the last three darts and they fly
+   * back in one by one in slow motion. Resolves when the camera is home.
+   */
+  replayDarts({ label = 'INSTANT REPLAY', onLand } = {}) {
+    return new Promise((resolve) => {
+      const list = this.darts.slice(-3);
+      if (!list.length || this.cine) return resolve();
+      const center = list.reduce((v, d) => v.add(d.holder.position), new THREE.Vector3()).divideScalar(list.length);
+      const finals = list.map((d) => ({ pos: d.holder.position.clone(), q: d.holder.quaternion.clone() }));
+      list.forEach((d) => (d.holder.visible = false));
+      const badge = document.createElement('div');
+      badge.className = 'b3d-replay';
+      badge.innerHTML = `<i></i>${String(label).replace(/[&<>"']/g, '')}`;
+      this.overlay.appendChild(badge);
+      this.host.classList.add('replaying');
+      this.cine = { pos: this.camera.position.clone(), look: new THREE.Vector3(0, 0, 0) };
+      this.setDisabled(true);
+      const START = 650;
+      const GAP = 850;
+      const FLY = 1150;
+      const HOLD = START + GAP * (list.length - 1) + FLY + 650;
+      const RETURN = 1000;
+      const t0 = performance.now();
+      let last = t0;
+      const landed = new Set();
+      let from = null;
+      this.anims.push((now) => {
+        const dt = Math.min(0.05, (now - last) / 1000);
+        last = now;
+        const k = now - t0;
+        if (k < HOLD) {
+          const a = 0.55 - (k / HOLD) * 1.0;
+          const want = center.clone().add(new THREE.Vector3(Math.sin(a) * 3.1, 0.55 + Math.sin(k / 900) * 0.15, Math.cos(a) * 3.1 + 0.6));
+          const s = 1 - Math.exp(-dt * 3.2);
+          this.cine.pos.lerp(want, s);
+          this.cine.look.lerp(center, s);
+          list.forEach((d, i) => {
+            const ti = k - (START + i * GAP);
+            if (ti < 0) return;
+            const u = Math.min(1, ti / FLY);
+            const e = 1 - Math.pow(1 - u, 2);
+            const out = new THREE.Vector3(0, 1, 0).applyQuaternion(finals[i].q);
+            d.holder.visible = true;
+            d.holder.quaternion.copy(finals[i].q);
+            d.holder.position.copy(finals[i].pos).addScaledVector(out, 6 * (1 - e));
+            d.model.userData.flights.rotation.y += dt * 1.6;
+            if (u >= 1 && !landed.has(i)) {
+              landed.add(i);
+              d.holder.position.copy(finals[i].pos);
+              this.impact(d, { label: false });
+              onLand?.(i);
+            }
+          });
+          return true;
+        }
+        if (!from) {
+          from = { pos: this.cine.pos.clone(), look: this.cine.look.clone() };
+          badge.classList.add('out');
+        }
+        const r = Math.min(1, (k - HOLD) / RETURN);
+        const e = r < 0.5 ? 4 * r * r * r : 1 - Math.pow(-2 * r + 2, 3) / 2;
+        const g = this.gamePose();
+        this.cine.pos.lerpVectors(from.pos, g.pos, e);
+        this.cine.look.lerpVectors(from.look, g.look, e);
+        if (r >= 1) {
+          this.cine = null;
+          badge.remove();
+          this.host.classList.remove('replaying');
+          this.setDisabled(false);
+          resolve();
+          return false;
+        }
+        return true;
+      });
+    });
+  }
+
   impact(entry, { label = true } = {}) {
     const { holder, dart } = entry;
     this.shake = dart.mult >= 2 ? 0.05 : 0.025;

@@ -5,9 +5,10 @@ import {
 } from './engine.js';
 import { Board, BOARD_SKINS } from './board.js';
 import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, loadClip, fireworks, winnerBanner } from './fx.js';
-import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup } from './storage.js';
+import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup, photoKey } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
-import { call180, callTurnScore, callBust, callGameShot, callUpNext } from './caller.js';
+import { call180, callTurnScore, callBust, callGameShot, callUpNext, callIntro, callVersus, callGameOn } from './caller.js';
+import { playWalkOn } from './walkon.js';
 import { hostRoom, joinRoom, qrSvg, remoteUrl, remoteCodeFromHash } from './remote.js';
 
 const data = load();
@@ -47,8 +48,9 @@ const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const clone = (o) => JSON.parse(JSON.stringify(o));
 /** What goes inside an avatar: the player's photo if they have one, else their emoji. */
+const photoOf = (name) => data.photos?.[photoKey(name)] ?? null;
 const face = (p) => {
-  const src = p && data.photos?.[p.id];
+  const src = p && photoOf(p.name);
   return src ? `<img src="${src}" alt="" draggable="false">` : p?.avatar ?? '🎯';
 };
 const prefs = data.prefs;
@@ -373,7 +375,7 @@ function renderRoster() {
       (p, i) => `
     <li class="player-row" data-idx="${i}" style="--pc:${p.color}">
       <span class="grip" data-grip title="${t('moveUp')} / ${t('moveDown')}">${icon('grip')}</span>
-      <button class="avatar sm ${data.photos?.[p.id] ? 'has-photo' : ''}" data-avatar="${i}" aria-label="${t('photoMenu')}" aria-haspopup="menu">${face(p)}<i class="cam-badge" aria-hidden="true">${icon('camera')}</i></button>
+      <button class="avatar sm ${photoOf(p.name) ? 'has-photo' : ''}" data-avatar="${i}" aria-label="${t('photoMenu')}" aria-haspopup="menu">${face(p)}<i class="cam-badge" aria-hidden="true">${icon('camera')}</i></button>
       <input class="name" maxlength="24" value="${esc(p.name)}" data-name="${i}" aria-label="${t('playerN', { n: i + 1 })}">
       <button class="color-dot" data-color-cycle="${i}" style="--c:${p.color}" aria-label="colour"></button>
       <button class="icon-btn xs danger" data-remove="${i}" aria-label="${t('remove')}" ${data.roster.length <= 1 ? 'disabled' : ''}>${icon('x')}</button>
@@ -445,8 +447,7 @@ function onLobbyClick(e) {
     const [i, d] = b.dataset.move.split(':').map(Number);
     moveRoster(i, i + d);
   } else if (b.dataset.remove != null) {
-    const [gone] = data.roster.splice(+b.dataset.remove, 1);
-    if (gone && data.photos) delete data.photos[gone.id];
+    data.roster.splice(+b.dataset.remove, 1); // the photo stays saved to the name
     renderRoster();
   } else if (b.dataset.arena) {
     prefs.theme = b.dataset.arena;
@@ -473,7 +474,19 @@ function onLobbyInput(e) {
   if (e.target.dataset.cfg) {
     data.config[e.target.dataset.cfg] = e.target.checked;
   } else if (e.target.dataset.name != null) {
-    data.roster[+e.target.dataset.name].name = e.target.value;
+    const i = +e.target.dataset.name;
+    const p = data.roster[i];
+    const had = photoOf(p.name);
+    p.name = e.target.value;
+    const now = photoOf(p.name);
+    if (had !== now) {
+      const btn = $(`[data-avatar="${i}"]`);
+      if (btn) {
+        btn.classList.toggle('has-photo', !!now);
+        btn.innerHTML = `${face(p)}<i class="cam-badge" aria-hidden="true">${icon('camera')}</i>`;
+        if (now) btn.animate([{ transform: 'scale(.6)' }, { transform: 'scale(1)' }], { duration: 320, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+      }
+    }
   }
   updateSummary();
   save();
@@ -516,12 +529,13 @@ function closePhotoMenu() {
 function openPhotoMenu(anchor, idx) {
   closePhotoMenu();
   const p = data.roster[idx];
-  const has = !!data.photos?.[p.id];
+  const has = !!photoOf(p.name);
   const menu = document.createElement('div');
   menu.className = 'photo-menu panel';
   menu.setAttribute('role', 'menu');
   menu.innerHTML = `
-    <button role="menuitem" data-pm="upload">${icon('camera')} ${has ? t('photoChange') : t('photoAdd')}</button>
+    <p class="pm-for">${p.name.trim() ? t('photoFor', { name: esc(p.name.trim()) }) : t('photoNeedsName')}</p>
+    <button role="menuitem" data-pm="upload" ${p.name.trim() ? '' : 'disabled'}>${icon('camera')} ${has ? t('photoChange') : t('photoAdd')}</button>
     ${has ? `<button role="menuitem" data-pm="remove">${icon('x')} ${t('photoRemove')}</button>` : `<button role="menuitem" data-pm="emoji"><span class="pm-emoji">${AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length]}</span> ${t('nextEmoji')}</button>`}
     <input type="file" accept="image/*" hidden>`;
   document.body.appendChild(menu);
@@ -540,7 +554,7 @@ function openPhotoMenu(anchor, idx) {
     const a = e.target.closest('[data-pm]')?.dataset.pm;
     if (a === 'upload') input.click();
     else if (a === 'remove') {
-      delete data.photos[p.id];
+      delete data.photos[photoKey(p.name)];
       refresh();
     } else if (a === 'emoji') {
       p.avatar = AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length];
@@ -551,8 +565,9 @@ function openPhotoMenu(anchor, idx) {
     const file = input.files?.[0];
     if (!file) return;
     try {
+      if (!p.name.trim()) throw new Error('name');
       data.photos ??= {};
-      data.photos[p.id] = await processPhoto(file);
+      data.photos[photoKey(p.name)] = await processPhoto(file);
       refresh();
     } catch {
       closePhotoMenu();
@@ -631,7 +646,10 @@ function startMatch() {
   state.undo = [];
   save();
   sfx.whoosh();
+  const intro = prefs.walkOn !== false && prefs.motion !== 'off';
+  state.intro = intro;
   go('game');
+  if (intro) runWalkOn();
 }
 
 /* ───────────────────────── game ───────────────────────── */
@@ -672,7 +690,7 @@ function renderGame(main) {
     updateGame();
   });
   if (leg().winners) setTimeout(showResult, 200);
-  else if (!leg().turn.length) setTimeout(announceTurn, 700);
+  else if (!leg().turn.length && !state.intro) setTimeout(announceTurn, 700);
 }
 
 function onGameClick(e) {
@@ -802,6 +820,22 @@ function handleEvents(events, before, after, player) {
       confetti(220);
       call180(getLang());
       bigMoment('max', pinfo(player.pid).color);
+      if (state.board?.replayDarts && prefs.motion !== 'off') {
+        state.cinematic = true;
+        state.replaying = true;
+        setTimeout(() => {
+          if (!state.board?.replayDarts || state.view !== 'game') {
+            state.cinematic = state.replaying = false;
+            return;
+          }
+          state.board
+            .replayDarts({ label: t('instantReplay'), onLand: () => sfx.hit({ value: 20, mult: 3, points: 60 }) })
+            .then(() => {
+              state.cinematic = state.replaying = false;
+              if (prefs.autoNext && leg()?.turnDone && !leg().winners) state.autoTimer = setTimeout(() => advance(), 700);
+            });
+        }, 1500);
+      }
     }, 260);
   } else if (has('ton') && record) {
     setTimeout(() => {
@@ -827,7 +861,7 @@ function handleEvents(events, before, after, player) {
   if (has('closed') && !has('turn-end')) {
     // subtle feedback only
   }
-  if (has('turn-end') && !after.winners && prefs.autoNext) {
+  if (has('turn-end') && !after.winners && prefs.autoNext && !state.replaying) {
     const delay = has('bust') ? 2100 : has('180') ? 2600 : 1500;
     const btn = $('[data-g="next"]');
     btn?.style.setProperty('--auto', `${delay}ms`);
@@ -1149,6 +1183,53 @@ function renderFeed() {
           .join('')}</ul>`
       : `<p class="muted">${t('noTurns')}</p>`
   }`;
+}
+
+/* ───────────────────────── walk-on intros ───────────────────────── */
+
+function walkOnChips(name) {
+  const s = data.stats[photoKey(name)];
+  if (!s || !(s.games || s.darts)) return [];
+  const chips = [];
+  if (s.x01Darts) chips.push({ label: t('threeDart'), value: avg3(s).toFixed(1) });
+  chips.push({ label: t('wins'), value: `${s.wins}/${s.games}` });
+  if (s.t180) chips.push({ label: t('t180'), value: String(s.t180) });
+  if (s.bestCheckout) chips.push({ label: t('bestCheckout'), value: String(s.bestCheckout) });
+  return chips.slice(0, 4);
+}
+
+async function runWalkOn() {
+  const m = match();
+  if (!m) return;
+  state.cinematic = true;
+  const lang = getLang();
+  const players = (m.config.format === 'tournament' ? m.leg.players.map((p) => pinfo(p.pid)) : m.roster).map((p) => ({
+    name: p.name,
+    color: p.color,
+    face: face(p),
+    chips: walkOnChips(p.name),
+  }));
+  await playWalkOn({
+    players,
+    text: { introducing: t('introducing'), vs: t('versus'), gameOn: t('gameOnBig'), skip: t('skip'), debut: t('debut') },
+    hooks: {
+      onPlayer: (p) => {
+        sfx.crowd(0.7);
+        callIntro(p.name, lang);
+      },
+      onVs: (a, b) => {
+        sfx.boom();
+        callVersus(a.name, b.name, lang);
+      },
+      onGameOn: () => {
+        sfx.fanfare(false);
+        callGameOn(lang);
+      },
+    },
+  });
+  state.cinematic = false;
+  state.intro = false;
+  if (state.view === 'game') setTimeout(announceTurn, 300);
 }
 
 /* ───────────────────────── big screen + phone scoring ───────────────────────── */
@@ -1523,6 +1604,7 @@ function openSettings() {
       </div>
       ${row('autoNext', t('autoNext'))}
       ${row('motion', t('motion'))}
+      ${row('walkOn', t('walkOnSetting'))}
       ${row('quality', t('quality'))}
       <div class="result-actions"><button class="btn primary" data-close>${t('close')}</button></div>
     </div>`);
