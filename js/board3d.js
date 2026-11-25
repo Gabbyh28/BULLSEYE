@@ -1019,13 +1019,14 @@ export class Board3D {
     this.camera.updateProjectionMatrix();
   }
 
-  enterCinema({ title = 'WINNING DART', name = '', skip = 'Skip', color = '#f5c46b' }) {
+  enterCinema({ title = 'WINNING DART', name = '', skip = 'Skip', color = '#f5c46b', avatar = '', detail = '' }) {
     const stage = document.createElement('div');
     stage.className = 'cine-stage';
     stage.style.setProperty('--pc', color);
     const esc = (v) => String(v).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
     stage.innerHTML = `
-      <div class="cine-bar top"><span class="cine-tag"><i></i>${esc(title)}</span><b>${esc(name)}</b></div>
+      <div class="cine-bar top"><span class="cine-tag"><i></i>${esc(title)}</span><span class="cine-who">${avatar ? `<span class="cine-av">${avatar}</span>` : ''}<b>${esc(name)}</b></span></div>
+      ${avatar ? `<div class="cine-lower"><span class="cl-av">${avatar}</span><div class="cl-text"><small>${esc(title)}</small><b>${esc(name)}</b>${detail ? `<em>${esc(detail)}</em>` : ''}</div></div>` : ''}
       <div class="cine-bar bottom"><span class="cine-speed" dir="ltr">0.25×</span><button type="button" class="cine-skip">${esc(skip)} ›</button></div>`;
     document.body.appendChild(stage);
     stage.prepend(this.canvas);
@@ -1235,7 +1236,7 @@ export class Board3D {
     return this.runWinningThrow(dart, { ...opts, hand });
   }
 
-  runWinningThrow(dart, { color = '#f5c46b', title, name, skip, onImpact, hand = null } = {}) {
+  runWinningThrow(dart, { color = '#f5c46b', title, name, skip, avatar, detail, onImpact, hand = null } = {}) {
     return new Promise((resolve) => {
       if (dart.x == null) {
         onImpact?.();
@@ -1246,7 +1247,7 @@ export class Board3D {
       const T = new THREE.Vector3(dart.x * U, -dart.y * U, -0.035);
       const finalDir = new THREE.Vector3(Math.sin(-3 * DEG), Math.sin(16 * DEG), 1).normalize();
       const finalQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), finalDir);
-      this.enterCinema({ title, name, skip, color });
+      this.enterCinema({ title, name, skip, color, avatar, detail });
 
       const arm = hand ? this.buildRealArm(hand, color) : this.buildArm(color);
       const side = hand ? -1 : 1; // film the thumb side of the real hand
@@ -1316,6 +1317,7 @@ export class Board3D {
         this.dartGroup.add(holder);
         R = wp.clone();
         trail.visible = true;
+        this.stage?.querySelector('.cine-lower')?.classList.add('out');
       };
 
       const stick = () => {

@@ -24,6 +24,7 @@
   --accent-2: #4fd1c5;
   --hot: #ff5470;
   --good: #63e6a4;
+  --bad: #ff5d6c;
   --on-accent: #1b1305;
   --glow-1: rgba(70, 104, 180, .38);
   --glow-2: rgba(245, 196, 107, .16);
@@ -90,6 +91,7 @@
   --accent-2: #d9822b;
   --hot: #d23a3a;
   --good: #129a63;
+  --bad: #c8323f;
   --on-accent: #fff;
   --glow-1: rgba(14, 124, 102, .16);
   --glow-2: rgba(217, 130, 43, .16);
@@ -1535,3 +1537,76 @@ button:disabled { cursor: not-allowed; }
 .photo-menu button:hover, .photo-menu button:focus-visible { background: var(--surface-2); }
 .photo-menu .ico { width: 17px; height: 17px; }
 .pm-emoji { width: 17px; text-align: center; }
+
+/* ─── stats: actions, chart, form, head to head ─── */
+.stats-actions { margin-inline-start: auto; display: flex; flex-wrap: wrap; gap: 6px; }
+.stats-actions .btn .ico { width: 16px; height: 16px; }
+.notice-line { margin: 0 0 12px; color: var(--good); font-weight: 700; }
+.stats-page .form-error { margin: 0 0 10px; }
+.tile em { display: block; margin-top: .2rem; font-style: normal; font-size: .78rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.stats-grid.two { margin-top: 16px; grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); }
+.chart-panel, .form-panel { padding: 1.1rem 1.2rem; min-width: 0; }
+.chart-panel h4, .form-panel h4 { margin: 0 0 .7rem; font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.chart { position: relative; }
+.chart svg { display: block; width: 100%; height: auto; overflow: visible; touch-action: pan-y; }
+.chart .c-grid { stroke: var(--line); stroke-width: 1; }
+.chart .c-tick { fill: var(--muted); font-size: 12px; font-family: var(--font); font-variant-numeric: tabular-nums; }
+.chart .c-line { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; stroke-linecap: round; }
+.chart .c-ref { stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 5 5; }
+.chart .c-ref-label { fill: var(--muted); font-size: 12px; font-weight: 700; font-family: var(--font); }
+.chart .c-end { fill: var(--accent); stroke: var(--bg-2); stroke-width: 2; }
+.chart .c-end-label { fill: var(--text); font-size: 14px; font-weight: 800; font-family: var(--font); font-variant-numeric: tabular-nums; }
+.chart .c-cross { stroke: var(--text); stroke-opacity: .35; stroke-width: 1; }
+.chart .c-dot { fill: var(--accent); stroke: var(--bg-2); stroke-width: 2; }
+.chart .c-hit { cursor: crosshair; }
+.c-tip { position: absolute; pointer-events: none; min-width: 80px; padding: .35rem .6rem; border-radius: 10px; background: var(--bg-2); border: 1px solid var(--line-2); box-shadow: var(--shadow); }
+.c-tip small { display: block; font-size: .7rem; color: var(--muted); }
+.c-tip b { font-family: var(--display); font-weight: 900; font-size: 1.2rem; color: var(--text); }
+.chart-empty { margin: .4rem 0 0; }
+.form-strip { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; }
+.form-strip small { margin-inline-start: 6px; font-size: .72rem; }
+.form-chip { display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; font-weight: 800; font-size: .8rem; }
+.form-chip.w { background: color-mix(in srgb, var(--good), transparent 78%); color: var(--good); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--good), transparent 50%); }
+.form-chip.l { background: color-mix(in srgb, var(--bad), transparent 82%); color: var(--bad); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--bad), transparent 55%); }
+.h2h-title { margin-top: 1.2rem !important; }
+.h2h { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.h2h li { display: grid; grid-template-columns: auto minmax(0, 1fr) 80px auto; align-items: center; gap: .6rem; }
+.h2h b { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.h2h em { font-style: normal; font-family: var(--display); font-weight: 800; font-size: 1.05rem; font-variant-numeric: tabular-nums; min-width: 2.6rem; text-align: end; }
+.h2h-bar { height: 8px; border-radius: 9px; background: color-mix(in srgb, var(--bad), transparent 65%); overflow: hidden; }
+.h2h-bar i { display: block; height: 100%; background: var(--good); border-radius: inherit; }
+@media (max-width: 900px) { .stats-grid.two { grid-template-columns: 1fr; } }
+@media (max-width: 640px) { .stats-page .step-head { flex-wrap: wrap; } .stats-actions { margin-inline-start: 0; width: 100%; } }
+
+/* ─── cinematic: winner photo ─── */
+.cine-who { display: inline-flex; align-items: center; gap: .7rem; min-width: 0; }
+.cine-av, .cl-av { position: relative; display: grid; place-items: center; flex: none; border-radius: 50%; overflow: hidden; background: radial-gradient(circle at 30% 25%, color-mix(in srgb, var(--pc), #fff 35%), var(--pc) 55%); }
+.cine-av { width: clamp(34px, 6vh, 52px); height: clamp(34px, 6vh, 52px); font-size: 1.4rem; box-shadow: 0 0 0 2px var(--pc); }
+.cine-av img, .cl-av img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+.cine-lower {
+  position: absolute;
+  z-index: 3;
+  left: max(24px, env(safe-area-inset-left, 0px));
+  bottom: calc(clamp(48px, 11vh, 96px) + 22px);
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .7rem 1.6rem .7rem .7rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(8, 8, 12, .9), rgba(8, 8, 12, .7));
+  border: 1px solid color-mix(in srgb, var(--pc), transparent 45%);
+  box-shadow: 0 18px 50px rgba(0, 0, 0, .5);
+  backdrop-filter: blur(8px);
+  animation: lower-in .6s var(--spring) .35s both;
+}
+[dir='rtl'] .cine-lower { left: auto; right: max(24px, env(safe-area-inset-right, 0px)); padding: .7rem .7rem .7rem 1.6rem; }
+.cine-lower.out { animation: lower-out .4s var(--ease) forwards; }
+.cl-av { width: clamp(64px, 12vh, 104px); height: clamp(64px, 12vh, 104px); font-size: 2.6rem; box-shadow: 0 0 0 3px var(--pc), 0 0 30px color-mix(in srgb, var(--pc), transparent 50%); }
+.cl-text { display: grid; gap: .1rem; color: #fff; }
+.cl-text small { font-size: .7rem; font-weight: 800; letter-spacing: .22em; color: rgba(255, 255, 255, .65); }
+.cl-text b { font-family: var(--display); font-weight: 900; font-size: clamp(1.8rem, 4.4vh, 2.8rem); line-height: 1; }
+[lang='he'] .cl-text b { font-family: var(--font); }
+.cl-text em { font-style: normal; font-weight: 700; font-size: .95rem; color: color-mix(in srgb, var(--pc), #fff 40%); }
+@keyframes lower-in { from { opacity: 0; transform: translateX(-40px); } }
+@keyframes lower-out { to { opacity: 0; transform: translateX(-30px); } }
+[dir='rtl'] .cine-lower { --dx: 40px; }

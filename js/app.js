@@ -5,7 +5,7 @@ import {
 } from './engine.js';
 import { Board, BOARD_SKINS } from './board.js';
 import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, loadClip, fireworks, winnerBanner } from './fx.js';
-import { load, save, flush, recordLeg, recordMatch, resetStats } from './storage.js';
+import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
 
 const data = load();
@@ -61,11 +61,19 @@ function boot() {
   }
   applyPrefs();
   renderTopbar();
+  let restored = false;
+  try {
+    restored = sessionStorage.getItem('bullseye:restored') === '1';
+    sessionStorage.removeItem('bullseye:restored');
+  } catch {
+    /* storage unavailable */
+  }
+  state.notice = restored ? t('restored') : '';
   const tb = $('#topbar');
   const setTop = () => document.documentElement.style.setProperty('--topbar-h', `${tb.offsetHeight}px`);
   setTop();
   if ('ResizeObserver' in window) new ResizeObserver(setTop).observe(tb);
-  go('lobby');
+  go(restored ? 'stats' : 'lobby');
   document.addEventListener('keydown', onKey);
   document.addEventListener('pointerdown', unlockSpeech, { capture: true, passive: true });
   document.addEventListener('pointerdown', () => prefs.sound && loadClip('ole'), { capture: true, passive: true, once: true });
@@ -144,6 +152,8 @@ function icon(name) {
     undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     next: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
+    upload: '<path d="M12 20V9M7 14l5-5 5 5M5 4h14"/>',
     camera: '<path d="M14.5 4h-5L7.5 6.5H4a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8.5a2 2 0 0 0-2-2h-3.5z"/><circle cx="12" cy="13" r="3.5"/>',
     grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
     up: '<path d="m18 15-6-6-6 6"/>',
@@ -710,6 +720,8 @@ function onDart(dart) {
         color,
         title: t('winningDart'),
         name: pi.name,
+        avatar: face(pi),
+        detail: events.includes('checkout') ? `${t('checkout')} · ${next.turns.at(-1).startScore}` : modeTitle(next.mode),
         skip: t('skip'),
         onImpact: () => {
           hitSound();
@@ -1168,7 +1180,7 @@ function commitPending() {
   if (!p) return null;
   const old = match();
   recordLeg(old.leg, old.roster);
-  if (p.outcome.type === 'match' || p.outcome.type === 'tournament') recordMatch(old, p.outcome.winners);
+  if (p.outcome.type === 'match' || p.outcome.type === 'tournament') recordMatch(old, p.outcome.winners, p.outcome.type === 'tournament' ? p.next.bracket : null);
   data.match = p.next;
   state.pending = null;
   state.undo = [];
@@ -1335,11 +1347,20 @@ function renderStats(main) {
   all.sort((a, b) => b.wins - a.wins || avg3(b) - avg3(a));
   if (!state.statsPlayer || !all.find((s) => s.name === state.statsPlayer)) state.statsPlayer = all[0]?.name ?? null;
   const s = all.find((x) => x.name === state.statsPlayer);
+  const notice = state.notice;
+  state.notice = '';
 
   main.innerHTML = `
     <section class="stats-page">
       <header class="step-head reveal"><span class="step-no">◎</span><div><h2>${t('statsTitle')}</h2><p>${t('statsSub')}</p></div>
-        ${all.length ? `<button class="btn ghost sm" data-s="reset">${t('resetStats')}</button>` : ''}</header>
+        <div class="stats-actions">
+          <button class="btn ghost sm" data-s="backup" ${all.length || data.roster.length ? '' : 'disabled'}>${icon('download')} ${t('backup')}</button>
+          <button class="btn ghost sm" data-s="restore">${icon('upload')} ${t('restore')}</button>
+          ${all.length ? `<button class="btn ghost sm" data-s="reset">${t('resetStats')}</button>` : ''}
+          <input type="file" accept=".json,application/json" hidden id="restore-file">
+        </div></header>
+      ${notice ? `<p class="notice-line" role="status">✓ ${notice}</p>` : ''}
+      <p class="form-error" id="stats-error" role="alert"></p>
       ${!all.length ? `<div class="empty panel reveal"><div class="empty-board" id="stats-board"></div><p>${t('noStats')}</p><button class="btn primary" data-go="lobby">${t('start')}</button></div>` : `
       <div class="leaders reveal" style="--d:.05s">
         ${all.map((p, i) => `<button class="leader ${p.name === state.statsPlayer ? 'on' : ''}" data-s-player="${esc(p.name)}">
@@ -1355,12 +1376,12 @@ function renderStats(main) {
           ${tile(t('wins'), s.wins)}
           ${tile(t('winRate'), s.games ? Math.round((s.wins / s.games) * 100) + '%' : '—')}
           ${tile(t('threeDart'), s.x01Darts ? avg3(s).toFixed(1) : '—', 'hot')}
-          ${tile(t('bestTurn'), s.bestTurn)}
+          ${tile(t('checkoutRate'), s.dblAttempts ? Math.round(((s.dblHits ?? 0) / s.dblAttempts) * 100) + '%' : '—', 'hot', s.dblAttempts ? `${s.dblHits ?? 0}/${s.dblAttempts}` : '')}
           ${tile(t('bestCheckout'), s.bestCheckout || '—')}
           ${tile(t('t180'), s.t180, 'hot')}
           ${tile(t('t140'), s.t140)}
           ${tile(t('t100'), s.t100)}
-          ${tile(t('dartsThrown'), s.darts)}
+          ${tile(t('bestTurn'), s.bestTurn)}
           ${tile(t('trebleRate'), s.darts ? ((s.trebles / s.darts) * 100).toFixed(1) + '%' : '—')}
           ${tile(t('secPerTurn'), s.turns ? (s.turnMs / s.turns / 1000).toFixed(1) : '—')}
         </div>
@@ -1370,8 +1391,20 @@ function renderStats(main) {
           ${favBeds(s)}
         </div>
       </div>
+      <div class="stats-grid two reveal" style="--d:.18s">
+        <div class="panel chart-panel">
+          <h4>${t('avgTrend')}</h4>
+          ${avgChart(s)}
+        </div>
+        <div class="panel form-panel">
+          <h4>${t('form')}</h4>
+          ${formStrip(s.name)}
+          <h4 class="h2h-title">${t('h2h')}</h4>
+          ${h2hList(s)}
+        </div>
+      </div>
       ${data.history.length ? `<div class="history panel reveal" style="--d:.2s"><h4>${t('history')}</h4><ul>${data.history.slice(0, 15).map((h) => `
-        <li><span class="glyph" dir="ltr">${MODE_GLYPH[h.mode] ?? h.mode}</span><span>${h.players.map((n) => (h.winners.includes(n) ? `<b>🏆 ${esc(n)}</b>` : esc(n))).join(' · ')}</span><time>${new Date(h.at).toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time></li>`).join('')}</ul></div>` : ''}
+        <li><span class="glyph" dir="ltr">${esc(MODE_GLYPH[h.mode] ?? h.mode)}</span><span>${h.players.map((n) => (h.winners.includes(n) ? `<b>🏆 ${esc(n)}</b>` : esc(n))).join(' · ')}</span><time>${new Date(h.at).toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time></li>`).join('')}</ul></div>` : ''}
       `}
     </section>`;
 
@@ -1381,12 +1414,31 @@ function renderStats(main) {
     state.statsBoard.setQuality(prefs.quality === 'high' ? 'high' : 'low');
     if (s) state.statsBoard.setHeat(s.points);
   }
+  bindChart(main.querySelector('.chart'));
+
+  const fileInput = $('#restore-file');
+  fileInput.onchange = async () => {
+    const file = fileInput.files?.[0];
+    fileInput.value = '';
+    if (!file) return;
+    try {
+      const backup = readBackup(await file.text());
+      confirmRestore(backup);
+    } catch {
+      $('#stats-error').textContent = t('restoreBad');
+    }
+  };
+
   main.onclick = (e) => {
     const b = e.target.closest('button');
     if (!b) return;
     if (b.dataset.sPlayer) {
       state.statsPlayer = b.dataset.sPlayer;
       renderStats(main);
+    } else if (b.dataset.s === 'backup') {
+      downloadBackup();
+    } else if (b.dataset.s === 'restore') {
+      fileInput.click();
     } else if (b.dataset.s === 'reset') {
       if (b.dataset.armed) {
         resetStats();
@@ -1406,13 +1458,167 @@ function renderStats(main) {
   };
 }
 
+/* ── backup & restore ── */
+
+function downloadBackup() {
+  const blob = new Blob([exportBackup()], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `bullseye-backup-${new Date().toISOString().slice(0, 10)}.json`;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 5000);
+}
+
+function confirmRestore(backup) {
+  const d = backup.data;
+  const when = backup.exportedAt ? new Date(backup.exportedAt) : null;
+  const date = when && !Number.isNaN(+when) ? when.toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'long', year: 'numeric' }) : '—';
+  openModal(`
+    <div class="settings">
+      <h2>${t('restoreTitle')}</h2>
+      <p class="muted">${t('restoreBody', { date: esc(date), players: d.roster.length, matches: d.history.length, photos: Object.keys(d.photos).length })}</p>
+      <div class="result-actions">
+        <button class="btn ghost" data-close>${t('cancel')}</button>
+        <button class="btn primary" data-restore-now>${t('restoreConfirm')}</button>
+      </div>
+    </div>`, {
+    onClick: (e) => {
+      if (!e.target.closest('[data-restore-now]')) return;
+      restoreBackup(backup);
+      try {
+        sessionStorage.setItem('bullseye:restored', '1');
+      } catch {
+        /* storage unavailable */
+      }
+      location.reload();
+    },
+  });
+}
+
+/* ── richer stats ── */
+
+/** 3-dart average per X01 leg: one series, line + soft area, overall average as a dashed reference. */
+function avgChart(s) {
+  const v = s.legAverages ?? [];
+  if (v.length < 2) return `<p class="muted chart-empty">${t('chartEmpty')}</p>`;
+  const W = 640;
+  const H = 230;
+  const L = 36;
+  const R = 70;
+  const T = 14;
+  const B = 26;
+  const overall = avg3(s);
+  const lo0 = Math.min(...v, overall);
+  const hi0 = Math.max(...v, overall);
+  const step = Math.max(10, Math.ceil((hi0 - lo0) / 4 / 10) * 10);
+  const lo = Math.max(0, Math.floor((lo0 - 2) / step) * step);
+  const hi = Math.ceil((hi0 + 2) / step) * step;
+  const x = (i) => L + (i * (W - L - R)) / (v.length - 1);
+  const y = (val) => T + ((hi - val) * (H - T - B)) / (hi - lo || 1);
+  const line = v.map((val, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(val).toFixed(1)}`).join('');
+  const area = `${line}L${x(v.length - 1).toFixed(1)} ${H - B}L${x(0).toFixed(1)} ${H - B}Z`;
+  const grid = [];
+  for (let g = lo; g <= hi + 0.01; g += step) {
+    grid.push(`<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" class="c-grid"/><text x="${L - 8}" y="${y(g)}" class="c-tick" text-anchor="end" dominant-baseline="central">${g}</text>`);
+  }
+  const last = v.length - 1;
+  return `<div class="chart" data-vals="${v.join(',')}" data-l="${L}" data-r="${R}" data-w="${W}" data-t="${T}" data-b="${B}" data-h="${H}" data-lo="${lo}" data-hi="${hi}">
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${t('avgTrend')}: ${v.length} ${t('legs')}, ${t('latest')} ${v[last]}, ${t('lifetimeAvg')} ${overall.toFixed(1)}">
+      <defs><linearGradient id="avg-fill" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="var(--accent)" stop-opacity=".22"/><stop offset="1" stop-color="var(--accent)" stop-opacity="0"/></linearGradient></defs>
+      ${grid.join('')}
+      <path d="${area}" fill="url(#avg-fill)"/>
+      <line x1="${L}" x2="${W - R}" y1="${y(overall)}" y2="${y(overall)}" class="c-ref"/>
+      <text x="${W - R + 6}" y="${y(overall)}" class="c-ref-label" dominant-baseline="central">${t('lifetimeAvg')} ${overall.toFixed(1)}</text>
+      <path d="${line}" class="c-line"/>
+      <circle cx="${x(last)}" cy="${y(v[last])}" r="5" class="c-end"/>
+      <text x="${x(last) + 9}" y="${y(v[last]) - 12}" class="c-end-label">${v[last].toFixed(1)}</text>
+      <text x="${L}" y="${H - 6}" class="c-tick">${t('older')}</text>
+      <text x="${W - R}" y="${H - 6}" class="c-tick" text-anchor="end">${t('latest')}</text>
+      <g class="c-hover" visibility="hidden"><line class="c-cross" y1="${T}" y2="${H - B}"/><circle r="5" class="c-dot"/></g>
+      <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" class="c-hit"/>
+    </svg>
+    <div class="c-tip" hidden></div>
+  </div>`;
+}
+
+function bindChart(el) {
+  if (!el) return;
+  const v = el.dataset.vals.split(',').map(Number);
+  const [L, R, W, T, B, H, lo, hi] = ['l', 'r', 'w', 't', 'b', 'h', 'lo', 'hi'].map((k) => Number(el.dataset[k]));
+  const svg = el.querySelector('svg');
+  const hover = svg.querySelector('.c-hover');
+  const cross = hover.querySelector('.c-cross');
+  const dot = hover.querySelector('.c-dot');
+  const tip = el.querySelector('.c-tip');
+  const x = (i) => L + (i * (W - L - R)) / (v.length - 1);
+  const y = (val) => T + ((hi - val) * (H - T - B)) / (hi - lo || 1);
+  const show = (e) => {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const i = Math.max(0, Math.min(v.length - 1, Math.round(((p.x - L) / (W - L - R)) * (v.length - 1))));
+    cross.setAttribute('x1', x(i));
+    cross.setAttribute('x2', x(i));
+    dot.setAttribute('cx', x(i));
+    dot.setAttribute('cy', y(v[i]));
+    hover.setAttribute('visibility', 'visible');
+    const box = el.getBoundingClientRect();
+    const sx = box.width / W;
+    tip.innerHTML = `<small>${t('leg')} ${i + 1}/${v.length}</small><b dir="ltr">${v[i].toFixed(1)}</b>`;
+    tip.hidden = false;
+    tip.style.left = `${Math.min(box.width - 90, Math.max(0, x(i) * sx - 40))}px`;
+    tip.style.top = `${Math.max(0, y(v[i]) * sx - 58)}px`;
+  };
+  const hide = () => {
+    hover.setAttribute('visibility', 'hidden');
+    tip.hidden = true;
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', hide);
+}
+
+/** Last 10 match results for a player, newest first: W/L chips (letter + colour). */
+function formStrip(name) {
+  const key = name.toLowerCase();
+  const games = data.history.filter((h) => h.players.some((n) => n.toLowerCase() === key)).slice(0, 10);
+  if (!games.length) return `<p class="muted">${t('noForm')}</p>`;
+  return `<div class="form-strip" aria-label="${t('form')}">${games
+    .map((h) => {
+      const won = h.winners.some((n) => n.toLowerCase() === key);
+      return `<span class="form-chip ${won ? 'w' : 'l'}" title="${esc(h.players.join(' · '))}">${won ? t('winShort') : t('lossShort')}</span>`;
+    })
+    .join('')}<small class="muted">← ${t('latest')}</small></div>`;
+}
+
+function h2hList(s) {
+  const rows = Object.entries(s.h2h ?? {})
+    .map(([opp, r]) => ({ opp, ...r, n: r.w + r.l }))
+    .filter((r) => r.n > 0)
+    .sort((a, b) => b.n - a.n)
+    .slice(0, 6);
+  if (!rows.length) return `<p class="muted">${t('noH2h')}</p>`;
+  return `<ul class="h2h">${rows
+    .map((r) => {
+      const st = data.stats[r.opp.toLowerCase()];
+      const nm = st?.name ?? r.opp;
+      return `<li><span class="avatar xs" style="--pc:${colorFor(nm)}">${avatarFor(nm)}</span><b>${esc(nm)}</b>
+        <span class="h2h-bar" aria-hidden="true"><i style="width:${(r.w / r.n) * 100}%"></i></span>
+        <em dir="ltr">${r.w}–${r.l}</em></li>`;
+    })
+    .join('')}</ul>`;
+}
+
 const avg3 = (s) => (s.x01Darts ? (s.x01Points / s.x01Darts) * 3 : 0);
 const rosterEntry = (name) => data.roster.find((p) => p.name.toLowerCase() === name.toLowerCase());
 const colorFor = (name) => rosterEntry(name)?.color ?? '#8b9dff';
 const avatarFor = (name) => face(rosterEntry(name));
 
-function tile(label, value, tone = '') {
-  return `<article class="tile ${tone}"><small>${label}</small><b dir="ltr">${value}</b></article>`;
+function tile(label, value, tone = '', sub = '') {
+  return `<article class="tile ${tone}"><small>${label}</small><b dir="ltr">${value}</b>${sub ? `<em dir="ltr">${sub}</em>` : ''}</article>`;
 }
 
 function favBeds(s) {

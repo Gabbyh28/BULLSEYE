@@ -11,7 +11,8 @@ A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand
 - **Undo anything:** darts, turns, even a leg-winning dart
 - **Callouts:** 180, ton-plus, bust, game shot, Shanghai, Killer, plus confetti, synthesised sound effects and an optional caller voice
 - **6 arenas:** Championship, Neon Night, Old Tavern, Daylight, Carbon Blaze and Candy Royale. Each restyles the room and the board.
-- **Stats:** 3-dart average, 180s / 140+ / 100+, best turn, top checkout, treble rate, time per turn, a landing heatmap, favourite beds and match history
+- **Stats:** 3-dart average with a per-leg trend chart, checkout % (darts at a double), head-to-head records, recent form, 180s / 140+ / 100+, best turn, top checkout, treble rate, time per turn, a landing heatmap, favourite beds and match history
+- **Back up & restore:** save players, photos, stats and history to a file and load them on any device
 - **Player photos:** tap an avatar to add a photo (or take one on a phone); it shows on the scoreboard, results, stats and winner banner
 - **Hebrew (RTL) and English**, mobile-first layout, fullscreen, autosave and resume
 
@@ -46,6 +47,7 @@ npm test
 | `js/storage.js` | localStorage persistence and lifetime player stats |
 | `js/i18n.js` | Hebrew / English strings |
 | `tests/engine.test.mjs` | Rules-engine tests: board geometry, checkouts, every game mode, formats, undo safety |
+| `tests/storage.test.mjs` | Checkout %, head-to-head, backup round trip, and cleaning of hostile backup files |
 | `css/styles.css` | Themes, layout and motion |
 
 ## Credits
