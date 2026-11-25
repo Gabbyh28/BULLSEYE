@@ -124,6 +124,20 @@ export const sfx = {
     // crackle
     for (let i = 0; i < 6; i++) noise(c, { t: 0.15 + Math.random() * 0.6, dur: 0.03, gain: 0.08, freq: 3000 + Math.random() * 2000, q: 2 });
   },
+  /** A stadium roar: layered, swelling crowd noise with a few whistles and whoops. */
+  crowd(level = 1) {
+    const c = audio();
+    if (!c) return;
+    const dur = 1.6 + level * 1.6;
+    noise(c, { dur, gain: 0.16 * level, freq: 900, q: 0.5, swell: true });
+    noise(c, { dur: dur * 0.9, gain: 0.1 * level, freq: 2200, q: 0.9, swell: true, t: 0.08 });
+    noise(c, { dur: dur * 0.8, gain: 0.08 * level, type: 'lowpass', freq: 400, q: 0.3, swell: true, t: 0.04 });
+    const whoops = Math.round(3 + level * 5);
+    for (let i = 0; i < whoops; i++) {
+      const f0 = 500 + Math.random() * 500;
+      tone(c, { type: 'sine', f0, f1: f0 * (1.3 + Math.random() * 0.6), dur: 0.35 + Math.random() * 0.4, gain: 0.018 * level, t: 0.15 + Math.random() * dur * 0.6, attack: 0.05 });
+    }
+  },
   /** The "Olé!" played on any hit on 1 (same clip as Darts Arena). */
   ole() {
     const c = audio();
@@ -249,7 +263,7 @@ export function voiceStatus(lang) {
  * Speak a line. Lines queue one after another (e.g. "60" then the next
  * player's name); pass { interrupt: true } to cut off whatever is playing.
  */
-export function say(text, { interrupt = false, force = false } = {}) {
+export function say(text, { interrupt = false, force = false, rate = 1, pitch = 1 } = {}) {
   if ((!settings.voice && !force) || !('speechSynthesis' in window)) return;
   try {
     const line = String(text);
@@ -258,7 +272,8 @@ export function say(text, { interrupt = false, force = false } = {}) {
     const u = new SpeechSynthesisUtterance(line);
     u.lang = v?.lang?.replace('_', '-') || (hebrew ? 'he-IL' : 'en-GB');
     if (v) u.voice = v;
-    u.rate = 1;
+    u.rate = rate;
+    u.pitch = pitch;
     u.volume = 1;
     // Chrome drops utterances that get garbage-collected mid-queue.
     keepAlive.add(u);

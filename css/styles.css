@@ -1610,3 +1610,10 @@ button:disabled { cursor: not-allowed; }
 @keyframes lower-in { from { opacity: 0; transform: translateX(-40px); } }
 @keyframes lower-out { to { opacity: 0; transform: translateX(-30px); } }
 [dir='rtl'] .cine-lower { --dx: 40px; }
+
+/* ─── big moments (2D + page glow) ─── */
+.stage::after { content: ''; position: absolute; inset: -6% -8%; pointer-events: none; border-radius: 40%; opacity: 0; background: radial-gradient(closest-side, color-mix(in srgb, var(--flash, var(--accent)), transparent 30%), transparent 75%); mix-blend-mode: screen; z-index: 0; }
+.stage.flash-max::after { animation: stage-strobe 1.6s ease-out; }
+.stage.flash-ton::after { animation: stage-pulse .9s ease-out; }
+@keyframes stage-strobe { 0%, 20%, 40%, 60% { opacity: .85; } 10%, 30%, 50% { opacity: .15; } 100% { opacity: 0; } }
+@keyframes stage-pulse { 0% { opacity: .55; } 100% { opacity: 0; } }

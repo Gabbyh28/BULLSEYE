@@ -7,6 +7,7 @@ import { Board, BOARD_SKINS } from './board.js';
 import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, loadClip, fireworks, winnerBanner } from './fx.js';
 import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
+import { call180, callTurnScore, callBust, callGameShot, callUpNext } from './caller.js';
 
 const data = load();
 
@@ -754,8 +755,14 @@ function celebrate(events, after, player) {
   confetti(240);
   fireworks(4600);
   winnerBanner({ name: names, label, color: winners[0]?.color, avatar: winners.length === 1 ? face(winners[0]) : '🏆', duration: 3400 });
-  const he = getLang() === 'he';
-  say(has('checkout') ? (he ? `סגירה! ${names} ניצח` : `Game shot! ${names} wins!`) : he ? `${names} ניצח` : `${names} wins!`, { interrupt: true });
+  let matchOver = true;
+  try {
+    matchOver = ['match', 'tournament'].includes(commitLeg(match()).outcome.type);
+  } catch {
+    /* preview only */
+  }
+  callGameShot({ names, matchOver, checkout: has('checkout') ? record.startScore : 0, lang: getLang() });
+  state.board?.bigMoment?.('win', winners[0]?.color);
 }
 
 function handleEvents(events, before, after, player) {
@@ -767,7 +774,7 @@ function handleEvents(events, before, after, player) {
     setTimeout(() => {
       sfx.bust();
       callout(host, { title: t('bust'), sub: t('bustSub', { n: after.players.find((p) => p.pid === player.pid).score }), tone: 'bad' });
-      say(getLang() === 'he' ? 'נשרף' : 'Bust', { interrupt: true });
+      callBust(getLang());
       $('.board-wrap')?.animate([{ transform: 'translateX(0)' }, { transform: 'translateX(-10px)' }, { transform: 'translateX(9px)' }, { transform: 'translateX(-5px)' }, { transform: 'translateX(0)' }], { duration: 380 });
     }, 230);
   } else if (has('checkout') || has('win') || has('shanghai')) {
@@ -777,15 +784,19 @@ function handleEvents(events, before, after, player) {
   } else if (has('180')) {
     setTimeout(() => {
       sfx.fanfare(true);
+      sfx.crowd(1);
       callout(host, { title: '180', sub: '★ ★ ★', tone: 'gold', duration: 1900 });
       confetti(220);
-      say(getLang() === 'he' ? 'מאה ושמונים!' : 'One hundred and eighty!', { interrupt: true });
+      call180(getLang());
+      bigMoment('max', pinfo(player.pid).color);
     }, 260);
   } else if (has('ton') && record) {
     setTimeout(() => {
       sfx.fanfare(false);
+      sfx.crowd(record.counted >= 140 ? 0.7 : 0.45);
       callout(host, { title: String(record.counted), sub: t('ton') + (record.counted >= 140 ? '+' : ''), tone: 'cool' });
-      say(record.counted);
+      callTurnScore(record.counted, getLang());
+      bigMoment('ton', pinfo(player.pid).color);
     }, 260);
   } else if (has('killer')) {
     setTimeout(() => {
@@ -798,7 +809,7 @@ function handleEvents(events, before, after, player) {
       callout(host, { title: t('eliminated'), tone: 'bad' });
     }, 260);
   } else if (has('turn-end') && record) {
-    if (isX01(after.mode)) say(record.counted || (getLang() === 'he' ? 'אפס' : 'No score'));
+    if (isX01(after.mode)) callTurnScore(record.counted, getLang());
   }
   if (has('closed') && !has('turn-end')) {
     // subtle feedback only
@@ -835,12 +846,21 @@ function announceTurn() {
   if (!L || L.winners || L.turn.length) return;
   const p = activePlayer(L);
   const name = pinfo(p.pid).name;
-  const he = getLang() === 'he';
-  let line = he ? `התור של ${name}` : name;
-  if (isX01(L.mode) && p.score <= 170 && checkout(p.score, 3, L.doubleOut)) {
-    line += he ? `, נשארו ${p.score}` : `, you require ${p.score}`;
+  const require = isX01(L.mode) && p.score <= 170 && checkout(p.score, 3, L.doubleOut) ? p.score : 0;
+  callUpNext({ name, require, lang: getLang() });
+}
+
+/** 180s and ton-plus scores light up the arena (3D) or flash the stage (2D). */
+function bigMoment(kind, color) {
+  if (prefs.motion === 'off') return;
+  if (state.board?.bigMoment) state.board.bigMoment(kind, color);
+  const stage = $('.stage');
+  if (stage) {
+    stage.style.setProperty('--flash', color);
+    stage.classList.remove('flash-max', 'flash-ton');
+    void stage.offsetWidth;
+    stage.classList.add(kind === 'max' ? 'flash-max' : 'flash-ton');
   }
-  say(line);
 }
 
 function undo() {

@@ -526,7 +526,7 @@ export class Board3D {
     surround.castShadow = true;
     s.add(surround);
 
-    this.ledTex = canvasTex(512, 4, () => {});
+    this.ledTex = canvasTex(512, 4, () => {}, { repeat: true });
     this.ledMat = new THREE.MeshStandardMaterial({ color: '#000', emissive: '#fff', emissiveMap: this.ledTex, emissiveIntensity: 2.5 });
     const led = new THREE.Mesh(new THREE.TorusGeometry(3.0, 0.032, 12, 220), this.ledMat);
     led.position.z = 0.13;
@@ -717,6 +717,13 @@ export class Board3D {
     this.dust.material.color.set(sc.key);
     this.sc = sc;
     this.shadowDirty = true;
+    this.calm = {
+      key: this.key.intensity,
+      rim: this.rim.intensity,
+      keyColor: this.key.color.clone(),
+      rimColor: this.rim.color.clone(),
+      hemi: this.hemi.intensity,
+    };
   }
 
   setQuality() {}
@@ -773,6 +780,10 @@ export class Board3D {
       this.pointer.y += (this.pointer.ty - this.pointer.y) * k;
       pos = new THREE.Vector3(1.3 + this.pointer.x * 0.3 + (1 - intro) * 6, -1.25 + this.pointer.y * 0.22 - (1 - intro) * 4, dist + (1 - intro) * 9);
     }
+    if (this.punch > 0.001) {
+      pos.lerp(look, this.punch * 0.14);
+      this.punch *= Math.exp(-dt * 2.2);
+    }
     if (this.shake > 0.001) {
       pos.x += (Math.random() - 0.5) * this.shake;
       pos.y += (Math.random() - 0.5) * this.shake;
@@ -780,6 +791,47 @@ export class Board3D {
     }
     cam.position.copy(pos);
     cam.lookAt(look);
+  }
+
+  /* ───────────── big moments ───────────── */
+
+  /** 'max' (180), 'ton' (100+) or 'win': strobe the arena in the player's colour, chase the LED ring, punch in. */
+  bigMoment(kind = 'ton', color = '#ffffff') {
+    const strong = kind === 'max' || kind === 'win';
+    this.moment = { t0: performance.now(), dur: strong ? 2600 : 1300, strong, color: new THREE.Color(color) };
+    this.punch = strong ? 1 : 0.45;
+    this.shake = Math.max(this.shake, strong ? 0.06 : 0.025);
+    this.crowdCheer?.(strong ? 1 : 0.5);
+  }
+
+  updateMoment(now, t) {
+    const m = this.moment;
+    if (!m || !this.calm) return;
+    const k = (now - m.t0) / m.dur;
+    if (k >= 1) {
+      this.key.intensity = this.calm.key;
+      this.rim.intensity = this.calm.rim;
+      this.key.color.copy(this.calm.keyColor);
+      this.rim.color.copy(this.calm.rimColor);
+      this.hemi.intensity = this.calm.hemi;
+      this.ledTex.offset.x = 0;
+      this.ledTex.repeat.x = 1;
+      this.moment = null;
+      return;
+    }
+    const fade = 1 - k;
+    // strobe early, then a warm glow that fades out
+    const strobe = m.strong && k < 0.45 ? (Math.sin(t * 38) > 0 ? 1 : 0.25) : 1;
+    const mix = Math.min(1, fade * 1.3);
+    this.key.color.copy(this.calm.keyColor).lerp(m.color, 0.55 * mix);
+    this.rim.color.copy(this.calm.rimColor).lerp(m.color, 0.8 * mix);
+    this.key.intensity = this.calm.key * (1 + (m.strong ? 0.9 : 0.4) * fade * strobe);
+    this.rim.intensity = this.calm.rim * (1 + (m.strong ? 2.2 : 1) * fade * strobe);
+    this.hemi.intensity = this.calm.hemi * (1 + 0.6 * fade);
+    // LED ring: a chase of light running around the ring
+    this.ledTex.repeat.x = 6;
+    this.ledTex.offset.x = (now / 1000) * (m.strong ? 2.4 : 1.4);
+    this.ledMat.emissiveIntensity = (this.sc?.ledI ?? 2) * 0.5 * (1 + 1.4 * fade * strobe);
   }
 
   loop() {
@@ -800,8 +852,10 @@ export class Board3D {
     const alive = running.filter((a) => a(now) !== false);
     this.anims = alive.concat(this.anims);
 
-    // LED breathing + target pulse
-    if (this.sc) this.ledMat.emissiveIntensity = this.sc.ledI * 0.5 * (0.95 + Math.sin(t * 1.6) * 0.05);
+    // LED breathing + target pulse (a big moment takes over the lights while it runs)
+    if (this.sc && !this.moment) this.ledMat.emissiveIntensity = this.sc.ledI * 0.5 * (0.95 + Math.sin(t * 1.6) * 0.05);
+    this.updateMoment(now, t);
+    this.crowd?.update(t, dt);
     this.targetMat.opacity = 0.05 + (Math.sin(t * 3.2) * 0.5 + 0.5) * 0.07;
 
     // Dust
@@ -1060,6 +1114,9 @@ export class Board3D {
     rim.position.set(5, 4, 9);
     rim.target.position.set(1.3, -0.5, 13);
     this.cineSet = [floor, side, light, light.target, rim, rim.target];
+    this.crowd = buildCrowd({ name, color });
+    this.cineSet.push(this.crowd.group);
+    this.crowdCheer = (level) => this.crowd?.cheer(level);
     this.cineSet.forEach((o) => this.scene.add(o));
   }
 
@@ -1079,6 +1136,9 @@ export class Board3D {
       }
     });
     this.cineSet = [];
+    this.crowd?.dispose();
+    this.crowd = null;
+    this.crowdCheer = null;
     this.setCameraFov(26, 1);
     this.resize();
   }
@@ -1327,6 +1387,7 @@ export class Board3D {
         this.darts.push(entry);
         this.impact(entry, { label: false });
         this.shake = 0.14;
+        this.crowd?.cheer(1);
         impactAt = performance.now();
         this.scene.remove(arm.root);
         trail.visible = false;
@@ -1561,4 +1622,152 @@ export class Board3D {
     this.overlay.remove();
     this.host.classList.remove('board3d');
   }
+}
+
+
+/* ───────────── the crowd ───────────── */
+
+/**
+ * Tiers of spectators along the arena side wall, seen behind the thrower in
+ * the cinematic. Instanced bodies and heads that sway, signs that wave, and
+ * phone-camera flashes when they cheer.
+ */
+function buildCrowd({ name = '', color = '#f5c46b' } = {}) {
+  const group = new THREE.Group();
+  const ROWS = 4;
+  const PER = 34;
+  const N = ROWS * PER;
+  // Dark, low-saturation tones so the stands read as a crowd in the shadows, not as toys.
+  const shirts = ['#2a3242', '#3a2730', '#23332d', '#33302a', '#2b2a3d', '#402f22', '#1f2a36', '#3a3a3a'].map((c) => new THREE.Color(c).multiplyScalar(0.6));
+  const skin = ['#b9876a', '#8d5d43', '#e0b49a', '#6b4532', '#cf9f84'].map((c) => new THREE.Color(c).multiplyScalar(0.45));
+
+  const bodyGeo = new THREE.CapsuleGeometry(0.21, 0.42, 4, 10);
+  const headGeo = new THREE.SphereGeometry(0.15, 14, 10);
+  const bodyMat = new THREE.MeshStandardMaterial({ roughness: 0.9, metalness: 0 });
+  const headMat = new THREE.MeshStandardMaterial({ roughness: 0.75, metalness: 0 });
+  const bodies = new THREE.InstancedMesh(bodyGeo, bodyMat, N);
+  const heads = new THREE.InstancedMesh(headGeo, headMat, N);
+  bodies.frustumCulled = heads.frustumCulled = false;
+
+  // Stepped stands
+  const standMat = new THREE.MeshStandardMaterial({ color: '#15171c', roughness: 0.85 });
+  const people = [];
+  for (let r = 0; r < ROWS; r++) {
+    const x = 3.7 + r * 1.05;
+    const yBase = -3.3 + r * 1.0;
+    const step = new THREE.Mesh(new THREE.BoxGeometry(1.05, 0.25, 26), standMat);
+    step.position.set(x, yBase - 0.15, 8);
+    group.add(step);
+    for (let i = 0; i < PER; i++) {
+      const z = -4 + i * 0.72 + (r % 2) * 0.36 + (Math.random() - 0.5) * 0.15;
+      const p = {
+        x: x + (Math.random() - 0.5) * 0.2,
+        y: yBase + 0.25 + Math.random() * 0.08,
+        z,
+        phase: Math.random() * Math.PI * 2,
+        speed: 0.8 + Math.random() * 0.8,
+        jump: 0.6 + Math.random() * 0.6,
+        lean: (Math.random() - 0.5) * 0.12,
+      };
+      people.push(p);
+      bodies.setColorAt(people.length - 1, shirts[Math.floor(Math.random() * shirts.length)]);
+      heads.setColorAt(people.length - 1, skin[Math.floor(Math.random() * skin.length)]);
+    }
+  }
+  group.add(bodies, heads);
+
+  // Signs held above a few heads
+  const signTexts = [name ? name.toUpperCase() : 'BULLSEYE', '180!', 'GAME ON', '🎯', name ? `${name.toUpperCase()} ★` : 'ONE MORE!', 'BULLSEYE'];
+  const signs = [];
+  signTexts.forEach((text, i) => {
+    const c = document.createElement('canvas');
+    c.width = 256;
+    c.height = 128;
+    const ctx = c.getContext('2d');
+    ctx.fillStyle = i % 2 ? '#ffffff' : color;
+    ctx.fillRect(0, 0, 256, 128);
+    ctx.fillStyle = i % 2 ? '#111111' : '#111111';
+    ctx.font = '900 54px "Big Shoulders Display", Impact, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(text, 128, 66, 236);
+    const tex = new THREE.CanvasTexture(c);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const sign = new THREE.Mesh(new THREE.PlaneGeometry(0.9, 0.45), new THREE.MeshStandardMaterial({ map: tex, roughness: 0.6, side: THREE.DoubleSide }));
+    sign.rotation.y = -Math.PI / 2; // facing the camera side (-x)
+    const who = people[Math.floor(((i + 0.5) / signTexts.length) * PER) + PER * (i % ROWS)];
+    signs.push({ mesh: sign, who, phase: Math.random() * 6 });
+    group.add(sign);
+  });
+
+  // Phone-camera flashes
+  const flashGeo = new THREE.BufferGeometry();
+  const FL = 40;
+  const fpos = new Float32Array(FL * 3);
+  flashGeo.setAttribute('position', new THREE.BufferAttribute(fpos, 3));
+  const flashMat = new THREE.PointsMaterial({ color: '#ffffff', size: 0.16, transparent: true, opacity: 0, blending: THREE.AdditiveBlending, depthWrite: false });
+  const flashes = new THREE.Points(flashGeo, flashMat);
+  flashes.frustumCulled = false;
+  group.add(flashes);
+
+  const m = new THREE.Matrix4();
+  const q = new THREE.Quaternion();
+  const e = new THREE.Euler();
+  const v = new THREE.Vector3();
+  const one = new THREE.Vector3(1, 1, 1);
+  const shoulders = new THREE.Vector3(1, 1, 1.35); // broader across the shoulders (z faces the camera)
+  let cheerUntil = 0;
+  let cheerLevel = 0;
+
+  return {
+    group,
+    cheer(level = 1) {
+      cheerLevel = level;
+      cheerUntil = performance.now() + 2200 + level * 1200;
+    },
+    update(t) {
+      const now = performance.now();
+      const excite = now < cheerUntil ? cheerLevel * Math.min(1, (cheerUntil - now) / 900) : 0;
+      people.forEach((p, i) => {
+        const hop = excite ? Math.max(0, Math.sin(t * (6 + p.speed * 3) + p.phase)) * 0.28 * p.jump * excite : 0;
+        const sway = Math.sin(t * p.speed + p.phase) * (0.04 + excite * 0.08);
+        const y = p.y + hop + Math.sin(t * p.speed * 1.3 + p.phase) * 0.015;
+        e.set(sway, 0, p.lean + sway * 0.5);
+        q.setFromEuler(e);
+        m.compose(v.set(p.x, y + 0.42, p.z), q, shoulders);
+        bodies.setMatrixAt(i, m);
+        m.compose(v.set(p.x + Math.sin(sway) * 0.1, y + 0.92, p.z + p.lean * 0.4), q, one);
+        heads.setMatrixAt(i, m);
+      });
+      bodies.instanceMatrix.needsUpdate = true;
+      heads.instanceMatrix.needsUpdate = true;
+      signs.forEach((sg) => {
+        const p = sg.who;
+        const wave = Math.sin(t * (2 + excite * 6) + sg.phase) * (0.12 + excite * 0.25);
+        const hop = excite ? Math.max(0, Math.sin(t * 7 + sg.phase)) * 0.25 * excite : 0;
+        sg.mesh.position.set(p.x - 0.05, p.y + 1.55 + hop, p.z);
+        sg.mesh.rotation.x = wave;
+      });
+      // camera flashes sparkle while they cheer
+      flashMat.opacity = excite ? 0.9 : 0;
+      if (excite) {
+        for (let i = 0; i < FL; i++) {
+          if (Math.random() < 0.25) {
+            const p = people[Math.floor(Math.random() * people.length)];
+            fpos.set([p.x - 0.25, p.y + 1.1, p.z], i * 3);
+          } else fpos.set([0, -99, 0], i * 3);
+        }
+        flashGeo.attributes.position.needsUpdate = true;
+      }
+    },
+    dispose() {
+      group.traverse((o) => {
+        o.geometry?.dispose?.();
+        if (o.material) {
+          o.material.map?.dispose?.();
+          o.material.dispose?.();
+        }
+      });
+    },
+  };
 }
