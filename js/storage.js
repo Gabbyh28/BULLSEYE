@@ -9,6 +9,7 @@ const defaults = () => ({
   roster: [],
   photos: {},
   match: null,
+  lastReport: null,
   stats: {},
   history: [],
 });

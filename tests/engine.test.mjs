@@ -167,3 +167,18 @@ test('throwDart never mutates its input (undo relies on this)', () => {
   E.throwDart(m.leg, D(20, 3));
   assert.equal(JSON.stringify(m.leg), before);
 });
+
+test('turn records carry the standing after the turn, and finished legs are logged', () => {
+  const m = E.createMatch({ mode: '301', doubleOut: false, format: 'legs', legs: 2 }, roster(2));
+  let L = throwAll(m.leg, [D(20, 3), D(20, 3), D(20, 1)]);
+  assert.equal(L.turns.at(-1).after, 301 - 140);
+  L = E.nextTurn(L);
+  L.players[1].score = 20;
+  L.turnStart = 20;
+  L = E.throwDart(L, D(20, 1)).leg;
+  const c = E.commitLeg({ ...m, leg: L });
+  assert.equal(c.match.legLog.length, 1);
+  assert.equal(c.match.legLog[0].turns.length, 2);
+  assert.equal(c.match.legLog[0].turns[1].after, 0);
+  assert.equal(c.match.legLog[0].turns[0].darts[0].x, undefined, 'coordinates are dropped');
+});

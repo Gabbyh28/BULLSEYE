@@ -1865,3 +1865,52 @@ html.in-game.tv .view-game { height: 100dvh; }
 .scoreline { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
 .sl b, .c-player b { overflow-wrap: break-word; }
 @media (max-width: 899px) { .scoreline { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }
+
+/* ─── fix one dart ─── */
+.slot.editable { position: relative; cursor: pointer; font: inherit; color: inherit; }
+.slot.editable:hover { outline: 2px solid color-mix(in srgb, var(--pc), transparent 30%); outline-offset: 1px; }
+.edit-pen { position: absolute; top: 4px; inset-inline-end: 5px; opacity: .45; }
+.edit-pen .ico { width: 12px; height: 12px; }
+.slot.editable:hover .edit-pen { opacity: .9; }
+.dart-editor { width: min(330px, calc(100vw - 16px)); padding: .6rem; display: grid; gap: .5rem; }
+.dart-editor .mults { width: 100%; display: grid; grid-template-columns: repeat(3, 1fr); }
+.dart-editor .mults button.on.m2 { background: var(--accent-2); color: var(--bg); }
+.dart-editor .mults button.on.m3 { background: var(--accent); color: var(--on-accent); }
+.dart-editor .nums button { height: 38px; padding: 0; justify-content: center; }
+.dart-editor .nums .missbtn { grid-column: span 3; }
+
+/* ─── match report ─── */
+.report { display: grid; gap: 14px; }
+.report-head { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 12px 20px; }
+.report-head > div:first-child { flex: 1; min-width: 0; }
+.report-head h2 { margin: .3rem 0 0; display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; font-size: clamp(1.8rem, 4vw, 2.8rem); }
+.report-head h2 b { font-family: var(--display); font-weight: 900; color: color-mix(in srgb, var(--pc), var(--text) 30%); }
+[lang='he'] .report-head h2 b { font-family: var(--font); }
+.report-head h2 small { font-size: 1rem; font-weight: 600; color: var(--muted); }
+.report-actions { display: flex; flex-wrap: wrap; gap: 6px; }
+.report-grid { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 14px; }
+.report-grid.two { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr); }
+.worm-panel, .moments, .report-table-wrap { padding: 1rem 1.2rem; min-width: 0; }
+.worm-top { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px; margin-bottom: .5rem; }
+.worm-top h4, .moments h4 { margin: 0; font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.w-legend { display: flex; flex-wrap: wrap; gap: 6px 14px; margin-bottom: .4rem; font-size: .82rem; font-weight: 600; }
+.w-legend span { display: inline-flex; align-items: center; gap: .4rem; }
+.w-legend i, .c-tip span i { width: 14px; height: 3px; border-radius: 2px; background: var(--pc); display: inline-block; }
+.worm .w-line { fill: none; stroke: var(--pc); stroke-width: 2.2; stroke-linejoin: round; stroke-linecap: round; }
+.worm .w-end { fill: var(--pc); stroke: var(--bg-2); stroke-width: 2; }
+.worm .w-label { fill: var(--text); font-size: 13px; font-weight: 700; font-family: var(--font); font-variant-numeric: tabular-nums; }
+.c-tip span { display: flex; align-items: center; gap: .4rem; font-size: .82rem; white-space: nowrap; }
+.c-tip span b { font-family: var(--display); font-weight: 800; font-size: 1rem; margin-inline-start: auto; padding-inline-start: .6rem; }
+.potm { display: grid; justify-items: center; align-content: center; gap: .5rem; padding: 1.2rem; text-align: center; }
+.potm b { font-family: var(--display); font-weight: 900; font-size: 1.8rem; }
+[lang='he'] .potm b { font-family: var(--font); }
+.potm small { color: var(--muted); font-weight: 600; }
+.report-table-wrap { overflow-x: auto; }
+.report-table { width: 100%; border-collapse: collapse; font-size: .92rem; }
+.report-table th { font-size: .66rem; letter-spacing: .12em; text-transform: uppercase; color: var(--muted); font-weight: 700; padding: .4rem; text-align: center; white-space: nowrap; }
+.report-table td { padding: .55rem .4rem; border-top: 1px solid var(--line); text-align: center; font-family: var(--display); font-weight: 800; font-size: 1.1rem; font-variant-numeric: tabular-nums; }
+.report-table td:first-child, .report-table th:first-child { text-align: start; font-family: var(--font); font-weight: 600; font-size: .95rem; white-space: nowrap; }
+.moments ul { list-style: none; margin: .6rem 0 0; padding: 0; display: grid; gap: .5rem; }
+.moments li { display: flex; align-items: flex-start; gap: .6rem; line-height: 1.4; }
+.moments li i { flex: none; display: grid; place-items: center; width: 26px; height: 26px; border-radius: 8px; font-style: normal; font-weight: 800; color: var(--accent); background: color-mix(in srgb, var(--accent), transparent 85%); }
+@media (max-width: 900px) { .report-grid, .report-grid.two { grid-template-columns: 1fr; } .potm { grid-auto-flow: row; } }

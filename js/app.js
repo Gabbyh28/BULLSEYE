@@ -158,6 +158,8 @@ function icon(name) {
     undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     next: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    pen: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
+    chart: '<path d="M3 3v18h18"/><path d="m7 15 4-4 3 3 6-7"/>',
     tv: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
     phone: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
     download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
@@ -224,6 +226,7 @@ function go(view) {
   if (view === 'lobby') renderLobby(main);
   else if (view === 'game') renderGame(main);
   else if (view === 'stats') renderStats(main);
+  else if (view === 'report') renderReport(main);
   renderTopbar();
   window.scrollTo(0, 0);
 }
@@ -714,6 +717,8 @@ function onGameClick(e) {
     onDart(manualDart(v, m));
     state.kpMult = 1;
     renderKeypad();
+  } else if (a === 'edit') {
+    openDartEditor(b, +b.dataset.i);
   } else if (a === 'tv') {
     if (state.tv) exitTv();
     else enterTv();
@@ -1002,6 +1007,7 @@ function renderHero(opts) {
       ${[0, 1, 2].map((i) => {
         const d = L.turn[i];
         const cls = d ? `filled m${d.mult} ${opts.popDart === i ? 'pop' : ''}` : i === L.turn.length && !L.turnDone ? 'next' : '';
+        if (d && canEditDart(i)) return `<button type="button" class="slot editable ${cls}" data-g="edit" data-i="${i}" title="${t('fixDart')}">${`<b>${d.label}</b><small>${d.points}</small>`}<i class="edit-pen" aria-hidden="true">${icon('pen')}</i></button>`;
         return `<div class="slot ${cls}">${d ? `<b>${d.label}</b><small>${d.points}</small>` : `<span>${i + 1}</span>`}</div>`;
       }).join('')}
       <div class="slot total"><small>${t('turnTotal')}</small><b>${L.bust ? '—' : total}</b></div>
@@ -1413,6 +1419,337 @@ function renderRemote(code) {
     .catch(() => status('error'));
 }
 
+/* ───────────────────────── fix one dart ───────────────────────── */
+
+/** The match as it was just before the current turn's first dart (from the undo history). */
+function turnStartSnapshot() {
+  const L = leg();
+  const n = L?.turn.length ?? 0;
+  if (!n || state.undo.length < n) return null;
+  const snap = state.undo[state.undo.length - n];
+  const sl = snap?.leg;
+  if (!sl || sl.turn.length || sl.current !== L.current || sl.round !== L.round || sl.winners) return null;
+  return snap;
+}
+
+function canEditDart(i) {
+  const L = leg();
+  return !!L && i < L.turn.length && !L.winners && !state.cinematic && !!turnStartSnapshot();
+}
+
+function openDartEditor(anchor, i) {
+  closePhotoMenu();
+  const old = leg().turn[i];
+  let mult = old.mult === 3 ? 3 : old.mult === 2 && old.value !== 25 ? 2 : 1;
+  const menu = document.createElement('div');
+  menu.className = 'photo-menu dart-editor panel';
+  menu.setAttribute('role', 'dialog');
+  menu.setAttribute('aria-label', t('fixDartN', { n: i + 1 }));
+  const draw = () => {
+    menu.innerHTML = `
+      <p class="pm-for">${t('fixDartN', { n: i + 1 })} · <b dir="ltr">${old.label}</b></p>
+      <div class="seg mults" dir="ltr">${[[1, t('single')], [2, t('double')], [3, t('treble')]].map(([v, l]) => `<button class="${mult === v ? 'on' : ''} m${v}" data-em="${v}">${l}</button>`).join('')}</div>
+      <div class="nums" dir="ltr">
+        ${Array.from({ length: 20 }, (_, k) => `<button data-ev="${k + 1}" class="m${mult}">${k + 1}</button>`).join('')}
+        <button data-ev="25" data-emm="1" class="bull">25</button>
+        <button data-ev="25" data-emm="2" class="bull hot">BULL</button>
+        <button data-ev="0" data-emm="0" class="missbtn">${t('miss')}</button>
+      </div>`;
+  };
+  draw();
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  menu.style.left = `${Math.min(innerWidth - mw - 8, Math.max(8, r.left + r.width / 2 - mw / 2))}px`;
+  const below = r.bottom + 6;
+  menu.style.top = `${below + menu.offsetHeight > innerHeight - 8 ? Math.max(8, r.top - menu.offsetHeight - 6) : below}px`;
+  menu.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.em) {
+      mult = +b.dataset.em;
+      draw();
+      return;
+    }
+    if (b.dataset.ev != null) {
+      const v = +b.dataset.ev;
+      const m = v === 0 ? 0 : v === 25 ? +b.dataset.emm : mult;
+      closePhotoMenu();
+      editDart(i, v, m);
+    }
+  });
+  state.photoMenuAway = (e) => {
+    if (!menu.contains(e.target) && !anchor.contains(e.target)) closePhotoMenu();
+  };
+  setTimeout(() => document.addEventListener('pointerdown', state.photoMenuAway, true), 0);
+}
+
+/** Replace dart i of the current turn and rescore the turn from its start. */
+function editDart(i, value, mult) {
+  const base = turnStartSnapshot();
+  const L = leg();
+  if (!base || !L) return;
+  const old = L.turn[i];
+  if (old.value === value && old.mult === mult) return;
+  clearTimeout(state.autoTimer);
+  const p = randomPointFor(value, mult);
+  const darts = L.turn.map((d, k) => (k === i ? makeDart(value, mult, p.x, p.y) : d));
+  const player = activePlayer(base.leg);
+  state.undo.length -= L.turn.length;
+  let m = clone(base);
+  let events = [];
+  let before = m.leg;
+  for (const d of darts) {
+    state.undo.push(clone(m));
+    before = m.leg;
+    const res = throwDart(m.leg, d);
+    m.leg = res.leg;
+    events = res.events;
+    if (res.leg.turnDone) break; // a bust or a finish ends the turn early
+  }
+  data.match = m;
+  state.board.showDarts(m.leg.turn, pinfo(player.pid).color);
+  sfx.tick();
+  save();
+  updateGame({ popDart: Math.min(i, m.leg.turn.length - 1) });
+  if (m.leg.turnDone) handleEvents(events, before, m.leg, player);
+}
+
+/* ───────────────────────── match report ───────────────────────── */
+
+function reportFromMatch(m, winners) {
+  return {
+    at: Date.now(),
+    config: clone(m.config),
+    roster: m.roster.map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color })),
+    legLog: clone(m.legLog ?? []),
+    winners: [...winners],
+  };
+}
+
+const rname = (rep, pid) => rep.roster.find((p) => p.id === pid) ?? { name: '?', avatar: '🎯', color: '#888' };
+
+function reportTotals(rep) {
+  const tot = new Map(rep.roster.map((p) => [p.id, { darts: 0, x01Darts: 0, x01Pts: 0, t180: 0, t140: 0, t100: 0, best: 0, legs: 0, att: 0, hit: 0, checkouts: [] }]));
+  for (const lg of rep.legLog) {
+    lg.winners.forEach((w) => tot.has(w) && (tot.get(w).legs += 1));
+    for (const t of lg.turns) {
+      const s = tot.get(t.pid);
+      if (!s) continue;
+      s.darts += t.darts.length;
+      s.best = Math.max(s.best, t.counted);
+      if (isX01(lg.mode)) {
+        s.x01Darts += t.darts.length;
+        s.x01Pts += t.counted;
+        if (t.counted === 180) s.t180 += 1;
+        else if (t.counted >= 140) s.t140 += 1;
+        else if (t.counted >= 100) s.t100 += 1;
+        if (t.checkout) s.checkouts.push(t.startScore);
+        if (lg.doubleOut) {
+          let left = t.startScore;
+          for (const d of t.darts) {
+            if (left === 50 || (left >= 2 && left <= 40 && left % 2 === 0)) {
+              s.att += 1;
+              if (d.mult === 2 && d.points === left) s.hit += 1;
+            }
+            left -= d.points;
+            if (left <= 1) break;
+          }
+        }
+      }
+    }
+  }
+  return tot;
+}
+
+function renderReport(main) {
+  const rep = data.lastReport;
+  if (!rep || !rep.legLog?.length) return go('stats');
+  const tot = reportTotals(rep);
+  const x01 = isX01(rep.config.mode);
+  const avg = (s) => (s.x01Darts ? (s.x01Pts / s.x01Darts) * 3 : 0);
+  const players = rep.roster.filter((p) => tot.get(p.id)?.darts);
+  const winners = rep.winners.map((w) => rname(rep, w));
+  // player of the match: best average in X01, otherwise the winner
+  const potm = x01 ? players.slice().sort((a, b) => avg(tot.get(b.id)) - avg(tot.get(a.id)))[0] : winners[0];
+  const potmWhy = x01 ? `${t('threeDart')} ${avg(tot.get(potm.id)).toFixed(1)}` : t('winner');
+  // key moments
+  const moments = [];
+  let bestTurn = null;
+  let bestOut = null;
+  rep.legLog.forEach((lg) =>
+    lg.turns.forEach((tt) => {
+      if (!bestTurn || tt.counted > bestTurn.counted) bestTurn = { ...tt, legNo: lg.legNo };
+      if (tt.checkout && (!bestOut || tt.startScore > bestOut.startScore)) bestOut = { ...tt, legNo: lg.legNo };
+      if (x01 && tt.counted === 180) moments.push({ icon: '★', text: t('momentMax', { name: esc(rname(rep, tt.pid).name), leg: lg.legNo }) });
+    }),
+  );
+  if (bestTurn?.counted && !(x01 && bestTurn.counted === 180)) moments.unshift({ icon: '↑', text: t('momentBestTurn', { name: esc(rname(rep, bestTurn.pid).name), n: bestTurn.counted, leg: bestTurn.legNo }) });
+  if (bestOut) moments.unshift({ icon: '◎', text: t('momentCheckout', { name: esc(rname(rep, bestOut.pid).name), n: bestOut.startScore, leg: bestOut.legNo }) });
+  if (x01) {
+    const quickest = rep.legLog
+      .filter((lg) => lg.winners.length === 1)
+      .map((lg) => ({ lg, darts: lg.turns.filter((tt) => tt.pid === lg.winners[0]).reduce((a, tt) => a + tt.darts.length, 0) }))
+      .sort((a, b) => a.darts - b.darts)[0];
+    if (quickest) moments.push({ icon: '⚡', text: t('momentQuickest', { name: esc(rname(rep, quickest.lg.winners[0]).name), n: quickest.darts, leg: quickest.lg.legNo }) });
+  }
+  const date = new Date(rep.at).toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
+  state.reportLeg = Math.min(state.reportLeg ?? 0, rep.legLog.length - 1);
+
+  main.innerHTML = `
+    <section class="report">
+      <header class="report-head reveal">
+        <div>
+          <span class="eyebrow">${t('matchReport')} · ${modeTitle(rep.config.mode)} · ${date}</span>
+          <h2>${winners.map((w) => `<span class="avatar" style="--pc:${w.color}">${face(w)}</span><b style="--pc:${w.color}">${esc(w.name)}</b>`).join(' & ')} <small>${winners.length > 1 ? t('sharedWin') : t('matchWon')}</small></h2>
+        </div>
+        <div class="report-actions">
+          <button class="btn ghost sm" data-rp="stats">${t('viewStats')}</button>
+          <button class="btn ghost sm" data-rp="new">${t('newGame')}</button>
+          <button class="btn primary sm" data-rp="rematch">${t('rematch')}</button>
+        </div>
+      </header>
+      <div class="report-grid reveal" style="--d:.06s">
+        <div class="panel worm-panel">
+          <div class="worm-top"><h4>${x01 ? t('wormX01') : rep.config.mode === 'killer' ? t('wormLives') : rep.config.mode === 'around' ? t('wormProgress') : t('wormPoints')}</h4>
+            ${rep.legLog.length > 1 ? `<div class="seg sm leg-tabs" role="tablist">${rep.legLog.map((lg, k) => `<button role="tab" class="${k === state.reportLeg ? 'on' : ''}" data-rleg="${k}">${t('leg')} ${lg.legNo}</button>`).join('')}</div>` : ''}</div>
+          <div id="worm">${wormChart(rep, rep.legLog[state.reportLeg])}</div>
+        </div>
+        <div class="panel potm">
+          <span class="eyebrow">${t('potm')}</span>
+          <span class="avatar xl" style="--pc:${potm.color}">${face(potm)}</span>
+          <b>${esc(potm.name)}</b>
+          <small>${potmWhy}</small>
+        </div>
+      </div>
+      <div class="report-grid two reveal" style="--d:.12s">
+        <div class="panel report-table-wrap">
+          <table class="report-table">
+            <thead><tr><th></th>${x01 ? `<th>${t('avg')}</th>` : ''}<th>${t('legs')}</th><th>${t('darts')}</th><th>${t('bestTurn')}</th>${x01 ? `<th>180</th><th>140+</th><th>100+</th><th>${t('checkoutRate')}</th>` : ''}</tr></thead>
+            <tbody>${players
+              .map((p) => {
+                const s = tot.get(p.id);
+                return `<tr style="--pc:${p.color}"><td><span class="avatar xs">${face(p)}</span> ${esc(p.name)}</td>${x01 ? `<td>${avg(s).toFixed(1)}</td>` : ''}<td>${s.legs}</td><td>${s.darts}</td><td>${s.best}</td>${x01 ? `<td>${s.t180}</td><td>${s.t140}</td><td>${s.t100}</td><td>${s.att ? Math.round((s.hit / s.att) * 100) + '%' : '—'}</td>` : ''}</tr>`;
+              })
+              .join('')}</tbody>
+          </table>
+        </div>
+        <div class="panel moments">
+          <h4>${t('keyMoments')}</h4>
+          ${moments.length ? `<ul>${moments.slice(0, 8).map((mm) => `<li><i>${mm.icon}</i><span>${mm.text}</span></li>`).join('')}</ul>` : `<p class="muted">—</p>`}
+        </div>
+      </div>
+    </section>`;
+
+  bindWorm();
+  main.onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.dataset.rleg != null) {
+      state.reportLeg = +b.dataset.rleg;
+      $$('.leg-tabs button').forEach((x) => x.classList.toggle('on', x === b));
+      $('#worm').innerHTML = wormChart(rep, rep.legLog[state.reportLeg]);
+      bindWorm();
+    } else if (b.dataset.rp === 'stats') go('stats');
+    else if (b.dataset.rp === 'new') go('lobby');
+    else if (b.dataset.rp === 'rematch') {
+      data.match = createMatch(rep.config, rep.roster);
+      state.undo = [];
+      save();
+      go('game');
+    }
+  };
+}
+
+/** Worm chart: each player's standing after every round of one leg (one line per player). */
+function wormChart(rep, lg) {
+  const W = 760;
+  const H = 300;
+  const L = 44;
+  const R = 92;
+  const T = 16;
+  const B = 30;
+  const x01 = isX01(lg.mode);
+  const series = lg.players.map((pid) => {
+    const pts = lg.turns.filter((tt) => tt.pid === pid).map((tt) => tt.after ?? 0);
+    const startVal = x01 ? lg.start : lg.mode === 'killer' ? 3 : 0;
+    return { pid, p: rname(rep, pid), vals: [startVal, ...pts] };
+  });
+  const rounds = Math.max(1, ...series.map((sr) => sr.vals.length - 1));
+  const all = series.flatMap((sr) => sr.vals);
+  const hiRaw = Math.max(...all, 1);
+  const step = hiRaw > 200 ? 100 : hiRaw > 60 ? 20 : hiRaw > 20 ? 5 : 1;
+  const hi = Math.ceil(hiRaw / (step >= 100 ? step / 2 : step)) * (step >= 100 ? step / 2 : step);
+  const x = (i) => L + (i * (W - L - R)) / rounds;
+  const y = (v) => T + ((hi - v) * (H - T - B)) / (hi || 1);
+  const grid = [];
+  for (let g = 0; g <= hi; g += step) grid.push(`<line x1="${L}" x2="${W - R}" y1="${y(g)}" y2="${y(g)}" class="c-grid"/><text x="${L - 8}" y="${y(g)}" class="c-tick" text-anchor="end" dominant-baseline="central">${g}</text>`);
+  const xt = [];
+  const every = Math.max(1, Math.ceil(rounds / 10));
+  for (let i = 0; i <= rounds; i += every) xt.push(`<text x="${x(i)}" y="${H - 8}" class="c-tick" text-anchor="middle">${i}</text>`);
+  // end labels, nudged apart so they never overlap
+  const ends = series.map((sr) => ({ sr, y: y(sr.vals.at(-1)) })).sort((a, b) => a.y - b.y);
+  for (let k = 1; k < ends.length; k++) if (ends[k].y - ends[k - 1].y < 15) ends[k].y = ends[k - 1].y + 15;
+  const label = new Map(ends.map((e) => [e.sr.pid, e.y]));
+  const lines = series
+    .map((sr) => {
+      const d = sr.vals.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)} ${y(v).toFixed(1)}`).join('');
+      const li = sr.vals.length - 1;
+      return `<g style="--pc:${sr.p.color}">
+        <path d="${d}" class="w-line"/>
+        <circle cx="${x(li)}" cy="${y(sr.vals[li])}" r="4.5" class="w-end"/>
+        ${series.length <= 4 ? `<text x="${x(li) + 9}" y="${label.get(sr.pid)}" class="w-label" dominant-baseline="central">${esc(sr.p.name)} ${sr.vals[li]}</text>` : ''}
+      </g>`;
+    })
+    .join('');
+  return `<div class="chart worm" data-series='${esc(JSON.stringify(series.map((sr) => ({ n: sr.p.name, c: sr.p.color, v: sr.vals }))))}' data-geo="${[W, H, L, R, T, B, rounds, hi].join(',')}">
+    <div class="w-legend">${series.map((sr) => `<span style="--pc:${sr.p.color}"><i></i>${esc(sr.p.name)}</span>`).join('')}</div>
+    <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(series.map((sr) => `${sr.p.name}: ${sr.vals.join(', ')}`).join('; '))}">
+      ${grid.join('')}${xt.join('')}
+      <text x="${W - R + 22}" y="${H - 8}" class="c-tick c-axis-title">${t('round')} →</text>
+      ${lines}
+      <g class="c-hover" visibility="hidden"><line class="c-cross" y1="${T}" y2="${H - B}"/></g>
+      <rect x="${L}" y="${T}" width="${W - L - R}" height="${H - T - B}" fill="transparent" class="c-hit"/>
+    </svg>
+    <div class="c-tip" hidden></div>
+  </div>`;
+}
+
+function bindWorm() {
+  const el = $('.chart.worm');
+  if (!el) return;
+  const series = JSON.parse(el.dataset.series);
+  const [W, H, L, R, T, B, rounds] = el.dataset.geo.split(',').map(Number);
+  const svg = el.querySelector('svg');
+  const hover = svg.querySelector('.c-hover');
+  const cross = hover.querySelector('.c-cross');
+  const tip = el.querySelector('.c-tip');
+  const show = (e) => {
+    const pt = svg.createSVGPoint();
+    pt.x = e.clientX;
+    pt.y = e.clientY;
+    const p = pt.matrixTransform(svg.getScreenCTM().inverse());
+    const i = Math.max(0, Math.min(rounds, Math.round(((p.x - L) / (W - L - R)) * rounds)));
+    const cx = L + (i * (W - L - R)) / rounds;
+    cross.setAttribute('x1', cx);
+    cross.setAttribute('x2', cx);
+    hover.setAttribute('visibility', 'visible');
+    const box = el.getBoundingClientRect();
+    const svgBox = svg.getBoundingClientRect();
+    const sx = svgBox.width / W;
+    tip.innerHTML = `<small>${t('round')} ${i}</small>${series.map((s) => `<span style="--pc:${s.c}"><i></i>${esc(s.n)} <b dir="ltr">${s.v[i] ?? s.v.at(-1)}</b></span>`).join('')}`;
+    tip.hidden = false;
+    tip.style.left = `${Math.min(box.width - tip.offsetWidth - 4, Math.max(0, cx * sx + 12))}px`;
+    tip.style.top = `${svgBox.top - box.top + 8}px`;
+  };
+  svg.addEventListener('pointermove', show);
+  svg.addEventListener('pointerdown', show);
+  svg.addEventListener('pointerleave', () => {
+    hover.setAttribute('visibility', 'hidden');
+    tip.hidden = true;
+  });
+}
+
 /* ───────────────────────── results ───────────────────────── */
 
 function showResult() {
@@ -1462,7 +1799,7 @@ function showResult() {
       ${m.config.format === 'tournament' ? `<div class="bracket-wrap">${bracketHTML(next.bracket ?? m.bracket, m.roster)}</div>` : ''}
       <div class="result-actions">
         <button class="btn ghost" data-r="undo">${icon('undo')} ${t('undoLast')}</button>
-        ${final ? `<button class="btn ghost" data-r="stats">${t('viewStats')}</button><button class="btn ghost" data-r="new">${t('newGame')}</button>` : ''}
+        ${final ? `<button class="btn ghost" data-r="report">${icon('chart')} ${t('matchReport')}</button><button class="btn ghost" data-r="new">${t('newGame')}</button>` : ''}
         ${primary}
       </div>
     </div>`, { dismissable: false, onClick: onResultClick });
@@ -1477,7 +1814,11 @@ function commitPending() {
   if (!p) return null;
   const old = match();
   recordLeg(old.leg, old.roster);
-  if (p.outcome.type === 'match' || p.outcome.type === 'tournament') recordMatch(old, p.outcome.winners, p.outcome.type === 'tournament' ? p.next.bracket : null);
+  if (p.outcome.type === 'match' || p.outcome.type === 'tournament') {
+    recordMatch(old, p.outcome.winners, p.outcome.type === 'tournament' ? p.next.bracket : null);
+    data.lastReport = reportFromMatch(p.next, p.outcome.winners);
+    state.reportLeg = 0;
+  }
   data.match = p.next;
   state.pending = null;
   state.undo = [];
@@ -1512,6 +1853,10 @@ function onResultClick(e) {
     data.match = null;
     save();
     go('stats');
+  } else if (a === 'report') {
+    data.match = null;
+    save();
+    go('report');
   }
 }
 
@@ -1672,6 +2017,7 @@ function renderStats(main) {
     <section class="stats-page">
       <header class="step-head reveal"><span class="step-no">◎</span><div><h2>${t('statsTitle')}</h2><p>${t('statsSub')}</p></div>
         <div class="stats-actions">
+          ${data.lastReport ? `<button class="btn ghost sm" data-s="report">${icon('chart')} ${t('lastReport')}</button>` : ''}
           <button class="btn ghost sm" data-s="backup" ${all.length || data.roster.length ? '' : 'disabled'}>${icon('download')} ${t('backup')}</button>
           <button class="btn ghost sm" data-s="restore">${icon('upload')} ${t('restore')}</button>
           ${all.length ? `<button class="btn ghost sm" data-s="reset">${t('resetStats')}</button>` : ''}
@@ -1753,6 +2099,8 @@ function renderStats(main) {
     if (b.dataset.sPlayer) {
       state.statsPlayer = b.dataset.sPlayer;
       renderStats(main);
+    } else if (b.dataset.s === 'report') {
+      go('report');
     } else if (b.dataset.s === 'backup') {
       downloadBackup();
     } else if (b.dataset.s === 'restore') {

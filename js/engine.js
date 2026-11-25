@@ -324,6 +324,8 @@ function endTurn(leg, events) {
     startScore: leg.turnStart,
     checkout: isX01(leg.mode) && !!leg.winners && leg.winners.includes(p.pid),
     ms: Date.now() - (leg.turnStartedAt ?? Date.now()),
+    // the player's standing after this turn: remaining (X01), points, progress or lives
+    after: leg.mode === 'around' ? Math.min(21, p.progress - 1) : leg.mode === 'killer' ? p.lives : p.score,
   };
   leg.turns.push(record);
   events.push('turn-end');
@@ -396,6 +398,7 @@ export function createMatch(config, roster) {
     champion: null,
     finished: false,
     history: [],
+    legLog: [],
   };
   if (config.format === 'tournament') {
     match.bracket = createBracket(ids);
@@ -421,6 +424,17 @@ export function commitLeg(input) {
   const { config } = match;
   const legIds = leg.players.map((p) => p.pid);
   match.history.push({ legNo: match.legNo, winners, mode: leg.mode });
+  // keep every finished leg for the match report (without dart coordinates)
+  match.legLog ??= [];
+  match.legLog.push({
+    legNo: match.legNo,
+    mode: leg.mode,
+    doubleOut: leg.doubleOut,
+    winners,
+    players: leg.players.map((p) => p.pid),
+    start: modeInfo(leg.mode).x01 ?? 0,
+    turns: leg.turns.map((t) => ({ ...t, darts: t.darts.map((d) => ({ value: d.value, mult: d.mult, points: d.points, label: d.label })) })),
+  });
   winners.forEach((w) => (match.legWins[w] = (match.legWins[w] ?? 0) + 1));
 
   const needLegs = legsTarget(config);

@@ -8,7 +8,8 @@ A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand
 - **Formats:** single game, legs & sets (rotating starter), knockout tournament with byes and a live bracket
 - **Two ways to score:** tap the board (hover/drag-to-aim preview with a touch loupe) or use the S/D/T keypad
 - **Checkout routes** for every finish up to 170, aware of how many darts are left
-- **Undo anything:** darts, turns, even a leg-winning dart
+- **Undo anything:** darts, turns, even a leg-winning dart; or tap one dart of the current turn to fix just that dart (the turn is rescored)
+- **Match report:** a worm chart of every leg, a stats table, key moments and player of the match
 - **Callouts:** 180, ton-plus, bust, game shot, Shanghai, Killer, plus confetti, synthesised sound effects and an optional caller voice
 - **6 arenas:** Championship, Neon Night, Old Tavern, Daylight, Carbon Blaze and Candy Royale. Each restyles the room and the board.
 - **Stats:** 3-dart average with a per-leg trend chart, checkout % (darts at a double), head-to-head records, recent form, 180s / 140+ / 100+, best turn, top checkout, treble rate, time per turn, a landing heatmap, favourite beds and match history
