@@ -1839,3 +1839,29 @@ html.in-game.tv .view-game { height: 100dvh; }
   .game.kp .keypad .nums { flex: 1; grid-auto-rows: 1fr; }
   .game.kp .keypad .nums button { height: auto; min-height: 40px; font-size: 1.35rem; }
 }
+
+.voice-pick { display: grid; gap: .35rem; width: 100%; }
+.voice-pick select { width: 100%; min-height: 40px; padding: .4rem .6rem; border-radius: 10px; border: 1px solid var(--line-2); background: var(--surface-2); color: var(--text); font: inherit; font-size: .9rem; }
+
+/* Score chips: the name gets its own full line, the score sits underneath — no clipped names. */
+.scoreline { grid-template-columns: repeat(auto-fit, minmax(118px, 1fr)); }
+.sl {
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-areas: 'av name name' 'av pts closed';
+  row-gap: .05rem;
+  align-items: center;
+}
+.sl b { grid-area: name; font-size: .8rem; line-height: 1.15; white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; }
+.sl em { grid-area: pts; font-size: 1.35rem; text-align: start; }
+.sl small { grid-area: closed; align-self: end; padding-bottom: .15rem; }
+.sl.lead b::after { content: none; }
+.sl.lead em::after { content: ' ★'; font-size: .8rem; color: var(--accent); }
+/* Cricket table header: long names wrap instead of being cut. */
+.c-player b { white-space: normal; overflow: visible; text-overflow: clip; overflow-wrap: anywhere; font-size: .74rem; line-height: 1.15; }
+@media (max-width: 899px) {
+  .scoreline { grid-template-columns: repeat(auto-fit, minmax(104px, 1fr)); }
+  .sl em { font-size: 1.2rem; }
+}
+.scoreline { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.sl b, .c-player b { overflow-wrap: break-word; }
+@media (max-width: 899px) { .scoreline { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); } }

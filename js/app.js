@@ -4,7 +4,7 @@ import {
   nextTurn, commitLeg, activePlayer, targetsFor, aroundTarget, activeBracketMatch, legsTarget, setsTarget,
 } from './engine.js';
 import { Board, BOARD_SKINS } from './board.js';
-import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, loadClip, fireworks, winnerBanner } from './fx.js';
+import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, voiceChoices, loadClip, fireworks, winnerBanner } from './fx.js';
 import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup, photoKey } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
 import { call180, callTurnScore, callBust, callGameShot, callUpNext, callIntro, callVersus, callGameOn } from './caller.js';
@@ -96,7 +96,7 @@ function applyPrefs() {
   root.dataset.theme = prefs.theme;
   root.dataset.motion = prefs.motion;
   root.dataset.quality = prefs.quality;
-  configureFx({ sound: prefs.sound, voice: prefs.voice, lang: prefs.lang });
+  configureFx({ sound: prefs.sound, voice: prefs.voice, lang: prefs.lang, voiceName: prefs.voiceName?.[prefs.lang] ?? '' });
   const meta = $('meta[name="theme-color"]');
   if (meta) meta.content = getComputedStyle(root).getPropertyValue('--bg').trim() || '#070a12';
   [state.board, state.demo, state.statsBoard].forEach((b) => {
@@ -877,9 +877,8 @@ function announceTurn() {
   const L = leg();
   if (!L || L.winners || L.turn.length) return;
   const p = activePlayer(L);
-  const name = pinfo(p.pid).name;
   const require = isX01(L.mode) && p.score <= 170 && checkout(p.score, 3, L.doubleOut) ? p.score : 0;
-  callUpNext({ name, require, lang: getLang() });
+  callUpNext({ require, lang: getLang() });
 }
 
 /** 180s and ton-plus scores light up the arena (3D) or flash the stage (2D). */
@@ -1583,6 +1582,7 @@ function openSettings() {
       ${row('sound', t('sound'))}
       ${row('voice', t('voice'))}
       <div class="voice-check">
+        ${voicePicker()}
         <p class="voice-status" id="voice-status">${voiceLine()}</p>
         <button class="btn ghost sm" data-test-voice>${t('testVoice')}</button>
         ${voiceStatus(prefs.lang).voice ? '' : `<details class="voice-help"><summary>${t('voiceHow')}</summary><ul>
@@ -1600,6 +1600,14 @@ function openSettings() {
     </div>`);
   const root = $('#modal');
   root.onchange = (e) => {
+    if (e.target.id === 'voice-pick') {
+      prefs.voiceName = { ...(prefs.voiceName || {}), [prefs.lang]: e.target.value };
+      save();
+      applyPrefs();
+      $('#voice-status').innerHTML = voiceLine();
+      say(prefs.lang === 'he' ? 'סגירה, והמשחק!' : 'Game shot, and the match!', { interrupt: true, force: true });
+      return;
+    }
     const k = e.target.dataset.pref;
     if (!k) return;
     const v = e.target.checked;
@@ -1630,6 +1638,17 @@ function openSettings() {
     }
     prev(e);
   };
+}
+
+function voicePicker() {
+  const list = voiceChoices(prefs.lang);
+  if (list.length < 2) return '';
+  const chosen = prefs.voiceName?.[prefs.lang] ?? '';
+  return `<label class="voice-pick"><span class="label">${t('voicePick')}</span>
+    <select id="voice-pick">
+      <option value="">${t('voiceAuto')}</option>
+      ${list.map((v) => `<option value="${esc(v.name)}" ${v.name === chosen ? 'selected' : ''}>${esc(v.name)}</option>`).join('')}
+    </select></label>`;
 }
 
 function voiceLine() {

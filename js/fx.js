@@ -2,7 +2,7 @@
 
 let ctx = null;
 let master = null;
-const settings = { sound: true, voice: true, lang: 'en' };
+const settings = { sound: true, voice: true, lang: 'en', voiceName: '' };
 
 export function configureFx(s) {
   Object.assign(settings, s);
@@ -219,18 +219,46 @@ const HEBREW_NAME = /hebrew|carmit|asaf|עברית/i;
 const keepAlive = new Set();
 let unlocked = false;
 
-function pickVoice(hebrew) {
+const normLang = (v) => (v.lang || '').toLowerCase().replace('_', '-');
+const isHebrewVoice = (v) => normLang(v).startsWith('he') || normLang(v).startsWith('iw') || HEBREW_NAME.test(v.name);
+
+/**
+ * How natural a voice is likely to sound. Neural "Natural"/"Online" voices
+ * (Edge, Windows), Apple's Enhanced/Premium voices and Google's voices beat
+ * the basic compact system voices by a long way.
+ */
+function voiceScore(v, hebrew) {
+  const n = `${v.name} ${v.voiceURI || ''}`.toLowerCase();
+  const lang = normLang(v);
+  let s = 0;
+  if (/natural|neural|online/.test(n)) s += 40;
+  if (/premium/.test(n)) s += 30;
+  if (/enhanced|siri/.test(n)) s += 25;
+  if (/google/.test(n)) s += 18;
+  if (/compact|espeak|robot|novelty|whisper|bad news|bells|zarvox|trinoids|albert|jester|organ|cellos|bubbles|boing/.test(n)) s -= 60;
+  if (!v.localService) s += 4; // cloud voices tend to be the neural ones
+  if (hebrew) s += lang === 'he-il' || lang === 'iw-il' ? 6 : 0;
+  else s += lang === 'en-gb' ? 6 : lang === 'en-ie' || lang === 'en-au' ? 4 : lang.startsWith('en-us') ? 3 : 0;
+  return s;
+}
+
+/** Voices for a language, most natural first. */
+export function voiceChoices(lang) {
+  if (!('speechSynthesis' in window)) return [];
   if (!voices.length) loadVoices();
-  const norm = (v) => (v.lang || '').toLowerCase().replace('_', '-');
-  if (hebrew) {
-    return (
-      voices.find((v) => norm(v) === 'he-il' || norm(v) === 'iw-il') ??
-      voices.find((v) => norm(v).startsWith('he') || norm(v).startsWith('iw')) ??
-      voices.find((v) => HEBREW_NAME.test(v.name)) ??
-      null
-    );
+  const hebrew = lang === 'he';
+  return voices
+    .filter((v) => (hebrew ? isHebrewVoice(v) : normLang(v).startsWith('en')))
+    .sort((a, b) => voiceScore(b, hebrew) - voiceScore(a, hebrew));
+}
+
+function pickVoice(hebrew) {
+  const list = voiceChoices(hebrew ? 'he' : 'en');
+  if (settings.voiceName) {
+    const chosen = list.find((v) => v.name === settings.voiceName);
+    if (chosen) return chosen;
   }
-  return voices.find((v) => norm(v) === 'en-gb') ?? voices.find((v) => norm(v).startsWith('en')) ?? null;
+  return list[0] ?? null;
 }
 
 /**

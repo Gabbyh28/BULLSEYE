@@ -4,7 +4,7 @@ import { isX01 } from './engine.js';
 const KEY = 'bullseye:v1';
 
 const defaults = () => ({
-  prefs: { theme: 'championship', lang: null, sound: true, voice: true, autoNext: true, motion: 'on', quality: 'high', input: 'board', walkOn: true },
+  prefs: { theme: 'championship', lang: null, sound: true, voice: true, autoNext: true, motion: 'on', quality: 'high', input: 'board', walkOn: true, voiceName: {} },
   config: { mode: '501', doubleOut: true, format: 'single', legs: 3, sets: 1 },
   roster: [],
   photos: {},

@@ -9,15 +9,9 @@ const SLANG = {
 
 const isHe = (lang) => lang === 'he';
 
-/** The stretched maximum. */
+/** The maximum: one natural, emphatic line. */
 export function call180(lang) {
-  if (isHe(lang)) {
-    say('מאה ו', { interrupt: true, rate: 0.95, pitch: 1.05 });
-    say('שמונים!', { rate: 0.55, pitch: 1.3 });
-  } else {
-    say('One hundred and', { interrupt: true, rate: 0.95, pitch: 1.05 });
-    say('eighty!', { rate: 0.5, pitch: 1.35 });
-  }
+  say(isHe(lang) ? 'מאה ושמונים!' : 'One hundred and eighty!', { interrupt: true, rate: 0.92 });
 }
 
 /** A finished turn in X01: the score, with a little colour on the famous ones. */
@@ -26,46 +20,37 @@ export function callTurnScore(points, lang) {
   if (points === 0) return say(isHe(lang) ? 'אין ניקוד' : 'No score');
   const slang = SLANG[isHe(lang) ? 'he' : 'en'][points];
   if (slang) return say(slang);
-  if (points >= 100) return say(String(points), { rate: 0.85, pitch: 1.12 });
-  return say(String(points));
+  return say(String(points), { rate: points >= 100 ? 0.95 : 1 });
 }
 
 export function callBust(lang) {
-  say(isHe(lang) ? 'אין ניקוד' : 'No score', { interrupt: true, rate: 0.9 });
+  say(isHe(lang) ? 'אין ניקוד' : 'No score', { interrupt: true });
 }
 
 /** Leg or match won; on a 170 checkout, the big fish. */
 export function callGameShot({ names, matchOver, checkout, lang }) {
   const he = isHe(lang);
-  if (checkout === 170) say(he ? 'הדג הגדול! מאה שבעים!' : 'The big fish! One hundred and seventy!', { interrupt: true, rate: 0.9, pitch: 1.15 });
-  const shot = he ? (matchOver ? 'סגירה, והמשחק!' : 'סגירה!') : matchOver ? 'Game shot, and the match!' : 'Game shot!';
-  say(shot, { interrupt: checkout !== 170, rate: 0.85, pitch: 1.15 });
-  say(he ? `${names} ניצח` : `${names}!`, { rate: 0.95 });
+  if (checkout === 170) say(he ? 'הדג הגדול! מאה שבעים!' : 'The big fish! One hundred and seventy!', { interrupt: true, rate: 0.95 });
+  const shot = he ? (matchOver ? `סגירה, והמשחק, ל${names}!` : `סגירה ל${names}!`) : matchOver ? `Game shot, and the match, ${names}!` : `Game shot, ${names}!`;
+  say(shot, { interrupt: checkout !== 170, rate: 0.95 });
 }
 
-/** Turn start: "Gabby, you require 32." */
-export function callUpNext({ name, require, lang }) {
-  const he = isHe(lang);
-  if (require) say(he ? `${name}, נשארו לך ${require}` : `${name}, you require ${require}`);
-  else say(he ? `התור של ${name}` : name);
+/** Turn start: only when a finish is on, like a TV referee ("You require 32"). */
+export function callUpNext({ require, lang }) {
+  if (!require) return;
+  say(isHe(lang) ? `נשארו ${require}` : `You require ${require}`);
 }
 
 /** Player introduction for the start of a match. */
 export function callGameOn(lang) {
-  say(isHe(lang) ? 'המשחק מתחיל!' : 'Game on!', { rate: 0.9, pitch: 1.1 });
+  say(isHe(lang) ? 'המשחק מתחיל!' : 'Game on!', { rate: 0.95 });
 }
 
-/** Walk-on: "Introducing... Gabby!" */
+/** Walk-on: "Introducing... Gabby!" as one natural sentence. */
 export function callIntro(name, lang) {
-  if (isHe(lang)) {
-    say('ועכשיו...', { interrupt: true, rate: 0.85 });
-    say(`${name}!`, { rate: 0.75, pitch: 1.2 });
-  } else {
-    say('Introducing...', { interrupt: true, rate: 0.85 });
-    say(`${name}!`, { rate: 0.75, pitch: 1.2 });
-  }
+  say(isHe(lang) ? `ועכשיו, ${name}!` : `Introducing, ${name}!`, { interrupt: true, rate: 0.95 });
 }
 
 export function callVersus(a, b, lang) {
-  say(isHe(lang) ? `${a} נגד ${b}` : `${a}, versus, ${b}`, { interrupt: true, rate: 0.9, pitch: 1.1 });
+  say(isHe(lang) ? `${a} נגד ${b}` : `${a}, versus ${b}`, { interrupt: true, rate: 0.95 });
 }
