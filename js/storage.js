@@ -7,6 +7,7 @@ const defaults = () => ({
   prefs: { theme: 'championship', lang: null, sound: true, voice: true, autoNext: true, motion: 'on', quality: 'high', input: 'board' },
   config: { mode: '501', doubleOut: true, format: 'single', legs: 3, sets: 1 },
   roster: [],
+  photos: {},
   match: null,
   stats: {},
   history: [],

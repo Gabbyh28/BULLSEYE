@@ -44,6 +44,11 @@ const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 const clone = (o) => JSON.parse(JSON.stringify(o));
+/** What goes inside an avatar: the player's photo if they have one, else their emoji. */
+const face = (p) => {
+  const src = p && data.photos?.[p.id];
+  return src ? `<img src="${src}" alt="" draggable="false">` : p?.avatar ?? '🎯';
+};
 const prefs = data.prefs;
 
 /* ───────────────────────── boot ───────────────────────── */
@@ -139,6 +144,7 @@ function icon(name) {
     undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     next: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    camera: '<path d="M14.5 4h-5L7.5 6.5H4a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8.5a2 2 0 0 0-2-2h-3.5z"/><circle cx="12" cy="13" r="3.5"/>',
     grip: '<circle cx="9" cy="6" r="1.3"/><circle cx="15" cy="6" r="1.3"/><circle cx="9" cy="12" r="1.3"/><circle cx="15" cy="12" r="1.3"/><circle cx="9" cy="18" r="1.3"/><circle cx="15" cy="18" r="1.3"/>',
     up: '<path d="m18 15-6-6-6 6"/>',
     down: '<path d="m6 9 6 6 6-6"/>',
@@ -188,6 +194,7 @@ function destroyBoards() {
 
 function go(view) {
   state.cinematic = false;
+  closePhotoMenu();
   clearTimeout(state.autoTimer);
   clearInterval(state.demoTimer);
   state.view = view;
@@ -349,7 +356,7 @@ function renderRoster() {
       (p, i) => `
     <li class="player-row" data-idx="${i}" style="--pc:${p.color}">
       <span class="grip" data-grip title="${t('moveUp')} / ${t('moveDown')}">${icon('grip')}</span>
-      <button class="avatar sm" data-avatar="${i}" aria-label="avatar">${p.avatar}</button>
+      <button class="avatar sm ${data.photos?.[p.id] ? 'has-photo' : ''}" data-avatar="${i}" aria-label="${t('photoMenu')}" aria-haspopup="menu">${face(p)}<i class="cam-badge" aria-hidden="true">${icon('camera')}</i></button>
       <input class="name" maxlength="24" value="${esc(p.name)}" data-name="${i}" aria-label="${t('playerN', { n: i + 1 })}">
       <button class="color-dot" data-color-cycle="${i}" style="--c:${p.color}" aria-label="colour"></button>
       <button class="icon-btn xs danger" data-remove="${i}" aria-label="${t('remove')}" ${data.roster.length <= 1 ? 'disabled' : ''}>${icon('x')}</button>
@@ -405,10 +412,8 @@ function onLobbyClick(e) {
     c[k] = Math.max(+st.dataset.min, Math.min(+st.dataset.max, (c[k] || 1) + +b.dataset.step));
     st.querySelector('output').textContent = c[k];
   } else if (b.dataset.avatar != null) {
-    const p = data.roster[+b.dataset.avatar];
-    p.avatar = AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length];
-    b.textContent = p.avatar;
-    b.animate([{ transform: 'scale(.7) rotate(-20deg)' }, { transform: 'scale(1)' }], { duration: 260, easing: 'cubic-bezier(.3,1.6,.5,1)' });
+    openPhotoMenu(b, +b.dataset.avatar);
+    return;
   } else if (b.dataset.colorCycle != null) {
     const p = data.roster[+b.dataset.colorCycle];
     const taken = new Set(data.roster.filter((o) => o !== p).map((o) => o.color));
@@ -423,7 +428,8 @@ function onLobbyClick(e) {
     const [i, d] = b.dataset.move.split(':').map(Number);
     moveRoster(i, i + d);
   } else if (b.dataset.remove != null) {
-    data.roster.splice(+b.dataset.remove, 1);
+    const [gone] = data.roster.splice(+b.dataset.remove, 1);
+    if (gone && data.photos) delete data.photos[gone.id];
     renderRoster();
   } else if (b.dataset.arena) {
     prefs.theme = b.dataset.arena;
@@ -454,6 +460,94 @@ function onLobbyInput(e) {
   }
   updateSummary();
   save();
+}
+
+/* ── player photos ── */
+
+/** Centre-crop to a square (biased up, where faces usually are) and shrink to a small JPEG. */
+async function processPhoto(file) {
+  if (!file || !/^image\//.test(file.type)) throw new Error('type');
+  let src;
+  try {
+    src = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  } catch {
+    src = await new Promise((ok, no) => {
+      const img = new Image();
+      img.onload = () => ok(img);
+      img.onerror = no;
+      img.src = URL.createObjectURL(file);
+    });
+  }
+  const w = src.width;
+  const h = src.height;
+  const side = Math.min(w, h);
+  const S = 192;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingQuality = 'high';
+  ctx.drawImage(src, (w - side) / 2, Math.max(0, (h - side) * 0.3), side, side, 0, 0, S, S);
+  src.close?.();
+  return c.toDataURL('image/jpeg', 0.82);
+}
+
+function closePhotoMenu() {
+  document.querySelector('.photo-menu')?.remove();
+  document.removeEventListener('pointerdown', state.photoMenuAway, true);
+}
+
+function openPhotoMenu(anchor, idx) {
+  closePhotoMenu();
+  const p = data.roster[idx];
+  const has = !!data.photos?.[p.id];
+  const menu = document.createElement('div');
+  menu.className = 'photo-menu panel';
+  menu.setAttribute('role', 'menu');
+  menu.innerHTML = `
+    <button role="menuitem" data-pm="upload">${icon('camera')} ${has ? t('photoChange') : t('photoAdd')}</button>
+    ${has ? `<button role="menuitem" data-pm="remove">${icon('x')} ${t('photoRemove')}</button>` : `<button role="menuitem" data-pm="emoji"><span class="pm-emoji">${AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length]}</span> ${t('nextEmoji')}</button>`}
+    <input type="file" accept="image/*" hidden>`;
+  document.body.appendChild(menu);
+  const r = anchor.getBoundingClientRect();
+  const mw = menu.offsetWidth;
+  const left = Math.min(innerWidth - mw - 8, Math.max(8, getLang() === 'he' ? r.right - mw : r.left));
+  menu.style.left = `${left}px`;
+  menu.style.top = `${Math.min(innerHeight - menu.offsetHeight - 8, r.bottom + 6)}px`;
+  const input = menu.querySelector('input');
+  const refresh = () => {
+    closePhotoMenu();
+    renderRoster();
+    save();
+  };
+  menu.addEventListener('click', (e) => {
+    const a = e.target.closest('[data-pm]')?.dataset.pm;
+    if (a === 'upload') input.click();
+    else if (a === 'remove') {
+      delete data.photos[p.id];
+      refresh();
+    } else if (a === 'emoji') {
+      p.avatar = AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length];
+      refresh();
+    }
+  });
+  input.addEventListener('change', async () => {
+    const file = input.files?.[0];
+    if (!file) return;
+    try {
+      data.photos ??= {};
+      data.photos[p.id] = await processPhoto(file);
+      refresh();
+    } catch {
+      closePhotoMenu();
+      const err = $('#lobby-error');
+      if (err) err.textContent = t('photoError');
+    }
+  });
+  state.photoMenuAway = (e) => {
+    if (!menu.contains(e.target) && e.target !== anchor && !anchor.contains(e.target)) closePhotoMenu();
+  };
+  setTimeout(() => document.addEventListener('pointerdown', state.photoMenuAway, true), 0);
+  menu.querySelector('button')?.focus();
 }
 
 function moveRoster(from, to) {
@@ -647,7 +741,7 @@ function celebrate(events, after, player) {
   sfx.fanfare(true);
   confetti(240);
   fireworks(4600);
-  winnerBanner({ name: names, label, color: winners[0]?.color, avatar: winners.length === 1 ? winners[0].avatar : '🏆', duration: 3400 });
+  winnerBanner({ name: names, label, color: winners[0]?.color, avatar: winners.length === 1 ? face(winners[0]) : '🏆', duration: 3400 });
   const he = getLang() === 'he';
   say(has('checkout') ? (he ? `סגירה! ${names} ניצח` : `Game shot! ${names} wins!`) : he ? `${names} ניצח` : `${names} wins!`, { interrupt: true });
 }
@@ -717,7 +811,7 @@ function advance(silent = false) {
   updateGame();
   if (!silent) {
     const p = pinfo(activePlayer(leg()).pid);
-    toast(`<span class="toast-av" style="--pc:${p.color}">${p.avatar}</span><span><small>${t('upNext')}</small><b>${esc(p.name)}</b></span>`);
+    toast(`<span class="toast-av" style="--pc:${p.color}">${face(p)}</span><span><small>${t('upNext')}</small><b>${esc(p.name)}</b></span>`);
     sfx.whoosh();
   }
   announceTurn();
@@ -834,7 +928,7 @@ function renderHero(opts) {
   host.style.setProperty('--pc', pi.color);
   host.innerHTML = `
     <div class="hero-top">
-      <span class="avatar lg" style="--pc:${pi.color}">${pi.avatar}</span>
+      <span class="avatar lg" style="--pc:${pi.color}">${face(pi)}</span>
       <div class="who"><small><i class="live-dot"></i>${t('throwing')}</small><b>${esc(pi.name)}</b></div>
       <div class="big-num ${L.bust ? 'bust' : ''}" dir="ltr" data-v="${num}">${num}</div>
     </div>
@@ -864,7 +958,7 @@ function scoreline(L, cur) {
       const lead = o.score === best && leaders === 1 && best > 0;
       const closed = CRICKET_KEYS.filter((k) => o.marks[k] >= 3).length;
       return `<div class="sl ${o === cur ? 'on' : ''} ${lead ? 'lead' : ''}" style="--pc:${oi.color}">
-        <span class="avatar xs">${oi.avatar}</span>
+        <span class="avatar xs">${face(oi)}</span>
         <b>${esc(oi.name)}</b>
         <small dir="ltr">${closed}/7</small>
         <em dir="ltr">${o.score}</em>
@@ -938,7 +1032,7 @@ function renderScores() {
       <div class="cricket panel" style="--cols:${L.players.length}">
         <div class="c-row head"><span></span>${L.players.map((p) => {
           const pi = pinfo(p.pid);
-          return `<span class="c-player ${p === cur ? 'on' : ''}" style="--pc:${pi.color}"><i class="avatar sm">${pi.avatar}</i><b>${esc(pi.name)}</b><em dir="ltr">${p.score}</em>${showLegs ? `<small dir="ltr">${m.legWins[p.pid]}</small>` : ''}</span>`;
+          return `<span class="c-player ${p === cur ? 'on' : ''}" style="--pc:${pi.color}"><i class="avatar sm">${face(pi)}</i><b>${esc(pi.name)}</b><em dir="ltr">${p.score}</em>${showLegs ? `<small dir="ltr">${m.legWins[p.pid]}</small>` : ''}</span>`;
         }).join('')}</div>
         ${CRICKET_KEYS.map((k) => {
           const dead = L.players.every((p) => p.marks[k] >= 3);
@@ -971,7 +1065,7 @@ function renderScores() {
       }
       const out = L.mode === 'killer' && p.lives <= 0;
       return `<article class="score-card ${on ? 'on' : ''} ${out ? 'out' : ''}" style="--pc:${pi.color}">
-        <span class="avatar">${pi.avatar}</span>
+        <span class="avatar">${face(pi)}</span>
         <div class="sc-body">
           <div class="sc-name"><b>${esc(pi.name)}</b>
             ${showSets ? `<span class="tally" title="${t('sets')}" dir="ltr">S${m.setWins[p.pid]}</span>` : ''}
@@ -1003,7 +1097,7 @@ function renderFeed() {
       ? `<ul>${turns
           .map((x) => {
             const pi = pinfo(x.pid);
-            return `<li style="--pc:${pi.color}"><span class="avatar xs">${pi.avatar}</span><b>${esc(pi.name)}</b><span class="fd" dir="ltr">${x.darts.map((d) => `<i class="m${d.mult}">${d.label}</i>`).join('')}</span><em dir="ltr" class="${x.bust ? 'bad' : x.counted >= 100 ? 'hot' : ''}">${x.bust ? 'BUST' : x.counted}</em></li>`;
+            return `<li style="--pc:${pi.color}"><span class="avatar xs">${face(pi)}</span><b>${esc(pi.name)}</b><span class="fd" dir="ltr">${x.darts.map((d) => `<i class="m${d.mult}">${d.label}</i>`).join('')}</span><em dir="ltr" class="${x.bust ? 'bad' : x.counted >= 100 ? 'hot' : ''}">${x.bust ? 'BUST' : x.counted}</em></li>`;
           })
           .join('')}</ul>`
       : `<p class="muted">${t('noTurns')}</p>`
@@ -1034,7 +1128,7 @@ function showResult() {
       const best = Math.max(0, ...turns.map((x) => x.counted));
       const isW = L.winners.includes(p.pid);
       return `<tr class="${isW ? 'win' : ''}" style="--pc:${pi.color}">
-        <td><span class="avatar xs">${pi.avatar}</span> ${esc(pi.name)}</td>
+        <td><span class="avatar xs">${face(pi)}</span> ${esc(pi.name)}</td>
         <td dir="ltr">${isX01(L.mode) ? legAvg(L, p.pid) : p.score}</td>
         <td dir="ltr">${p.darts}</td>
         <td dir="ltr">${best}</td>
@@ -1049,7 +1143,7 @@ function showResult() {
 
   openModal(`
     <div class="result ${final ? 'final' : ''}">
-      <div class="trophy">${final ? trophySVG() : `<span class="avatar xl" style="--pc:${winners[0].color}">${winners[0].avatar}</span>`}</div>
+      <div class="trophy">${final ? trophySVG() : `<span class="avatar xl" style="--pc:${winners[0].color}">${face(winners[0])}</span>`}</div>
       <span class="eyebrow">${modeTitle(m.config.mode)}${m.config.format !== 'single' ? ` · ${t('leg')} ${m.legNo}` : ''}</span>
       <h2><span class="winner-names">${winners.map((w) => `<b style="--pc:${w.color}">${esc(w.name)}</b>`).join(' & ')}</span><small>${title}</small></h2>
       <table class="result-table">
@@ -1094,7 +1188,7 @@ function onResultClick(e) {
     state.board.clearDarts();
     updateGame();
     const p = pinfo(activePlayer(leg()).pid);
-    toast(`<span class="toast-av" style="--pc:${p.color}">${p.avatar}</span><span><small>${t('upNext')}</small><b>${esc(p.name)}</b></span>`);
+    toast(`<span class="toast-av" style="--pc:${p.color}">${face(p)}</span><span><small>${t('upNext')}</small><b>${esc(p.name)}</b></span>`);
     announceTurn();
   } else if (a === 'rematch') {
     const rm = data.match;
@@ -1315,7 +1409,7 @@ function renderStats(main) {
 const avg3 = (s) => (s.x01Darts ? (s.x01Points / s.x01Darts) * 3 : 0);
 const rosterEntry = (name) => data.roster.find((p) => p.name.toLowerCase() === name.toLowerCase());
 const colorFor = (name) => rosterEntry(name)?.color ?? '#8b9dff';
-const avatarFor = (name) => rosterEntry(name)?.avatar ?? '🎯';
+const avatarFor = (name) => face(rosterEntry(name));
 
 function tile(label, value, tone = '') {
   return `<article class="tile ${tone}"><small>${label}</small><b dir="ltr">${value}</b></article>`;
@@ -1334,6 +1428,7 @@ function favBeds(s) {
 
 function onKey(e) {
   if (e.target.matches('input, textarea') || state.cinematic) return;
+  if (e.key === 'Escape' && document.querySelector('.photo-menu')) return closePhotoMenu();
   if (e.key === 'Escape' && $('.modal.open') && state.modalDismissable) return closeModal();
   if (state.view !== 'game') return;
   if ((e.key === 'z' && (e.ctrlKey || e.metaKey)) || e.key === 'Backspace') {

@@ -12,6 +12,7 @@ A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand
 - **Callouts:** 180, ton-plus, bust, game shot, Shanghai, Killer, plus confetti, synthesised sound effects and an optional caller voice
 - **6 arenas:** Championship, Neon Night, Old Tavern, Daylight, Carbon Blaze and Candy Royale. Each restyles the room and the board.
 - **Stats:** 3-dart average, 180s / 140+ / 100+, best turn, top checkout, treble rate, time per turn, a landing heatmap, favourite beds and match history
+- **Player photos:** tap an avatar to add a photo (or take one on a phone); it shows on the scoreboard, results, stats and winner banner
 - **Hebrew (RTL) and English**, mobile-first layout, fullscreen, autosave and resume
 
 ## Run it
@@ -23,6 +24,14 @@ python3 -m http.server 8000
 ```
 
 Then open http://localhost:8000. To deploy, enable GitHub Pages on the branch, or drop the folder on any static host.
+
+## Tests
+
+The rules engine has a test suite (Node 18+, no dependencies). GitHub runs it on every push and pull request.
+
+```bash
+npm test
+```
 
 ## Code map
 
@@ -36,6 +45,7 @@ Then open http://localhost:8000. To deploy, enable GitHub Pages on the branch, o
 | `js/fx.js` | Web Audio sound effects, caller voice, confetti, callouts |
 | `js/storage.js` | localStorage persistence and lifetime player stats |
 | `js/i18n.js` | Hebrew / English strings |
+| `tests/engine.test.mjs` | Rules-engine tests: board geometry, checkouts, every game mode, formats, undo safety |
 | `css/styles.css` | Themes, layout and motion |
 
 ## Credits
