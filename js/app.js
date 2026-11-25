@@ -211,6 +211,7 @@ function destroyBoards() {
 }
 
 function go(view) {
+  document.documentElement.classList.toggle('in-game', view === 'game');
   state.cinematic = false;
   closePhotoMenu();
   if (view !== 'game') exitTv();
@@ -997,7 +998,7 @@ function renderHero(opts) {
       <div class="who"><small><i class="live-dot"></i>${t('throwing')}</small><b>${esc(pi.name)}</b></div>
       <div class="big-num ${L.bust ? 'bust' : ''}" dir="ltr" data-v="${num}">${num}</div>
     </div>
-    ${L.mode === 'cricket' ? scoreline(L, p) : ''}
+    ${scoreline(L, p)}
     <div class="dart-slots" dir="ltr">
       ${[0, 1, 2].map((i) => {
         const d = L.turn[i];
@@ -1014,19 +1015,23 @@ function renderHero(opts) {
   }
 }
 
+/** Everyone's score in one compact row: always shown in Cricket, and on phones in every mode. */
 function scoreline(L, cur) {
+  const points = ['cricket', 'shanghai', 'highscore'].includes(L.mode);
   const best = Math.max(...L.players.map((o) => o.score));
   const leaders = L.players.filter((o) => o.score === best).length;
-  return `<div class="scoreline" style="--n:${L.players.length}">${L.players
+  return `<div class="scoreline ${L.mode === 'cricket' ? 'always' : ''}" style="--n:${L.players.length}">${L.players
     .map((o) => {
       const oi = pinfo(o.pid);
-      const lead = o.score === best && leaders === 1 && best > 0;
-      const closed = CRICKET_KEYS.filter((k) => o.marks[k] >= 3).length;
-      return `<div class="sl ${o === cur ? 'on' : ''} ${lead ? 'lead' : ''}" style="--pc:${oi.color}">
+      const lead = points && o.score === best && leaders === 1 && best > 0;
+      const small =
+        L.mode === 'cricket' ? `${CRICKET_KEYS.filter((k) => o.marks[k] >= 3).length}/7` :
+        L.mode === 'killer' ? '♥'.repeat(Math.max(0, o.lives)) : '';
+      return `<div class="sl ${o === cur ? 'on' : ''} ${lead ? 'lead' : ''} ${L.mode === 'killer' && o.lives <= 0 ? 'out' : ''}" style="--pc:${oi.color}">
         <span class="avatar xs">${face(oi)}</span>
         <b>${esc(oi.name)}</b>
-        <small dir="ltr">${closed}/7</small>
-        <em dir="ltr">${o.score}</em>
+        ${small ? `<small dir="ltr">${small}</small>` : ''}
+        <em dir="ltr">${mainNumber(L, o)}</em>
       </div>`;
     })
     .join('')}</div>`;
@@ -1061,6 +1066,7 @@ function renderKeypad() {
   if (!host) return;
   const show = prefs.input === 'keypad';
   host.hidden = !show;
+  $('.game')?.classList.toggle('kp', show);
   if (!show) return;
   const m = state.kpMult;
   const L = leg();
