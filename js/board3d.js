@@ -7,6 +7,7 @@ import * as THREE from 'three';
 import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { SECTORS, R, scoreAt } from './engine.js';
 import { BOARD_SKINS } from './board.js';
+import { loadHand, poseHand, GRIP } from './hand.js';
 
 const U = 0.01; // world units per millimetre
 const BOARD_R = 2.26; // sisal face radius (226mm)
@@ -411,6 +412,7 @@ export class Board3D {
     if (this.opts.interactive) this.bindInput();
     this.observe();
     this.precompile();
+    if (this.opts.interactive) loadHand().catch(() => {});
     this.loop = this.loop.bind(this);
     this.raf = requestAnimationFrame(this.loop);
     document.fonts?.ready?.then(() => !this.dead && this.paintNumbers());
@@ -1048,12 +1050,13 @@ export class Board3D {
     floor.position.set(0, -5.2, 10);
     const side = new THREE.Mesh(new THREE.PlaneGeometry(40, 14), this.wallMat);
     side.rotation.y = Math.PI / 2;
-    side.position.set(-7, 1, 10);
+    side.position.set(7, 1, 10);
+    side.rotation.y = -Math.PI / 2;
     const light = new THREE.SpotLight(sc.key, 2.6, 0, 0.6, 0.8, 0);
-    light.position.set(6, 6, 17);
+    light.position.set(-6, 6, 17);
     light.target.position.set(1.3, -0.5, 13);
     const rim = new THREE.SpotLight(sc.fill, 1.6, 0, 0.7, 0.9, 0);
-    rim.position.set(-4, 4, 9);
+    rim.position.set(5, 4, 9);
     rim.target.position.set(1.3, -0.5, 13);
     this.cineSet = [floor, side, light, light.target, rim, rim.target];
     this.cineSet.forEach((o) => this.scene.add(o));
@@ -1139,12 +1142,100 @@ export class Board3D {
     return { root, pivot, slot, mats: [skin, sleeveMat] };
   }
 
+  /** Forearm + rigged, posed hand (falls back to buildArm if the model isn't available). */
+  buildRealArm(hand, color) {
+    const skin = hand.mesh.material;
+    const sleeveMat = new THREE.MeshStandardMaterial({ color: shade(color, -45), roughness: 0.9, metalness: 0 });
+    const root = new THREE.Group();
+    const pivot = new THREE.Group();
+    root.add(pivot);
+    // Tapered forearm: wider at the elbow, narrow at the wrist.
+    const L = 2.55;
+    const prof = [
+      [0.0, -0.1], [0.36, -0.05], [0.42, 0.25], [0.4, 0.8], [0.34, 1.6], [0.28, 2.15], [0.25, L - 0.1], [0.235, L + 0.12], [0.18, L + 0.3], [0.0, L + 0.34],
+    ].map(([r, y]) => new THREE.Vector2(r, y));
+    const fore = new THREE.Mesh(new THREE.LatheGeometry(prof, 40), skin);
+    fore.scale.set(1, 1, 0.78);
+    pivot.add(fore);
+    // Rolled-up sleeve near the elbow.
+    const sleeve = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.55, 0.9, 32), sleeveMat);
+    sleeve.position.y = 0.15;
+    pivot.add(sleeve);
+    // Sweatband at the wrist in the player's colour (also hides the hand/forearm join).
+    const ribs = canvasTex(64, 256, (ctx, w, h) => {
+      for (let y = 0; y < h; y += 8) {
+        ctx.fillStyle = y % 16 ? '#9a9a9a' : '#5c5c5c';
+        ctx.fillRect(0, y, w, 8);
+      }
+    }, { srgb: false, repeat: true });
+    ribs.repeat.set(12, 1);
+    const bandMat = new THREE.MeshStandardMaterial({ color: color, roughness: 0.95, metalness: 0, bumpMap: ribs, bumpScale: 2 });
+    const bandProf = [[0.255, -0.17], [0.3, -0.15], [0.315, 0], [0.3, 0.15], [0.255, 0.17]].map(([r, y]) => new THREE.Vector2(r, y));
+    const band = new THREE.Mesh(new THREE.LatheGeometry(bandProf, 40), bandMat);
+    band.scale.set(1.04, 1, 0.84);
+    band.position.y = L - 0.02;
+    pivot.add(band);
+    this.bandMat = bandMat;
+    const cuff = new THREE.Mesh(new THREE.TorusGeometry(0.47, 0.09, 12, 40), sleeveMat);
+    cuff.rotation.x = Math.PI / 2;
+    cuff.position.y = 0.6;
+    pivot.add(cuff);
+
+    // Hand: model metres -> world units (x10), fingers up (+y), palm toward the board (-z).
+    poseHand(hand, GRIP, 1);
+    const f = new THREE.Vector3(0, -1, 0);
+    const pSide = hand.palmSide.clone().projectOnPlane(f).normalize();
+    const mBasis = new THREE.Matrix4().makeBasis(f, pSide, new THREE.Vector3().crossVectors(f, pSide));
+    const wUp = new THREE.Vector3(0, 1, 0);
+    const wPalm = new THREE.Vector3(0, -0.35, -1).normalize(); // palm tipped slightly down, as in a real throw
+    const wBasis = new THREE.Matrix4().makeBasis(wUp, wPalm, new THREE.Vector3().crossVectors(wUp, wPalm));
+    const rot = new THREE.Quaternion().setFromRotationMatrix(wBasis.multiply(mBasis.transpose()));
+    const handGroup = new THREE.Group();
+    handGroup.quaternion.copy(rot);
+    handGroup.scale.setScalar(10);
+    const wrist = hand.rest.wrist.p.clone().multiplyScalar(10).applyQuaternion(rot);
+    handGroup.position.set(0, L - 0.05, 0).sub(wrist);
+    handGroup.add(hand.root);
+    hand.root.position.set(0, 0, 0);
+    hand.root.quaternion.identity();
+    hand.root.scale.setScalar(1);
+    pivot.add(handGroup);
+
+    // The dart sits in the pinch, pointing at the board.
+    const slot = new THREE.Group();
+    handGroup.updateMatrixWorld(true);
+    slot.position.copy(hand.grip).multiplyScalar(10).applyQuaternion(rot).add(handGroup.position);
+    slot.rotation.x = Math.PI / 2;
+    pivot.add(slot);
+
+    root.traverse((o) => o.isMesh && (o.castShadow = true));
+    return {
+      root,
+      pivot,
+      slot,
+      mats: [sleeveMat, bandMat],
+      keep: hand.root,
+      open: (k) => k > 0 && poseHand(hand, { ...GRIP, thumb: { ...GRIP.thumb, pinch: 0 } }, 1 - 0.55 * k),
+      detach: () => handGroup.remove(hand.root),
+    };
+  }
+
   /**
    * The winning dart: a profile shot of the throw, a slow-motion chase of the
    * dart to the board, a close-up on the winning bed, then back to the game view.
    * Resolves when the camera is back. onImpact fires as the dart sticks.
    */
-  playWinningThrow(dart, { color = '#f5c46b', title, name, skip, onImpact } = {}) {
+  async playWinningThrow(dart, opts = {}) {
+    let hand = null;
+    try {
+      hand = await Promise.race([loadHand(), new Promise((r) => setTimeout(() => r(null), 1500))]);
+    } catch {
+      hand = null;
+    }
+    return this.runWinningThrow(dart, { ...opts, hand });
+  }
+
+  runWinningThrow(dart, { color = '#f5c46b', title, name, skip, onImpact, hand = null } = {}) {
     return new Promise((resolve) => {
       if (dart.x == null) {
         onImpact?.();
@@ -1157,7 +1248,8 @@ export class Board3D {
       const finalQ = new THREE.Quaternion().setFromUnitVectors(new THREE.Vector3(0, 1, 0), finalDir);
       this.enterCinema({ title, name, skip, color });
 
-      const arm = this.buildArm(color);
+      const arm = hand ? this.buildRealArm(hand, color) : this.buildArm(color);
+      const side = hand ? -1 : 1; // film the thumb side of the real hand
       const HW = new THREE.Vector3(1.3, -0.1, 13.4); // hand at the moment of release
       arm.root.position.copy(HW).add(new THREE.Vector3(0, -2.4, 0));
       this.scene.add(arm.root);
@@ -1181,7 +1273,7 @@ export class Board3D {
       const history = [];
 
       const cine = {
-        pos: HW.clone().add(new THREE.Vector3(4.8, 0.1, 0.5)),
+        pos: HW.clone().add(new THREE.Vector3(4.8 * side, 0.1, 0.5)),
         look: HW.clone().add(new THREE.Vector3(0, -0.4, -0.5)),
         skip: false,
       };
@@ -1245,6 +1337,7 @@ export class Board3D {
         this.scene.remove(trail);
         tg.dispose();
         tm.dispose();
+        arm.detach?.(); // the loaded hand is reused next time
         arm.root.traverse((o) => o.isMesh && o.geometry.dispose());
         arm.mats.forEach((m) => m.dispose());
         this.cine = null;
@@ -1272,15 +1365,18 @@ export class Board3D {
         if (!holder) {
           arm.pivot.rotation.x = armAngle(ms);
           // Track the hand so it stays framed through the wind-up and throw.
-          const hand = arm.slot.getWorldPosition(new THREE.Vector3());
+          const hand = arm.slot.getWorldPosition(new THREE.Vector3()); // eslint-disable-line no-shadow
           const kk = 1 - Math.exp(-dt * 5);
-          const want = hand.clone().add(new THREE.Vector3(lerp(4.8, 4.0, clamp(ms / RELEASE, 0, 1)), 0.2, 0.5));
+          const want = hand.clone().add(new THREE.Vector3(side * lerp(4.4, 3.4, clamp(ms / RELEASE, 0, 1)), 0.25, 0.7));
           cine.pos.lerp(want, kk);
           cine.look.lerp(hand.clone().add(new THREE.Vector3(0, -0.35, -0.5)), kk);
           if (ms >= RELEASE) release();
           return true;
         }
-        if (!impactAt) arm.pivot.rotation.x = armAngle(ms);
+        if (!impactAt) {
+          arm.pivot.rotation.x = armAngle(ms);
+          arm.open?.(clamp((ms - RELEASE) / 180, 0, 1)); // fingers open as the dart leaves
+        }
 
         // 2. Slow-motion flight with a chase camera
         if (!impactAt) {
@@ -1307,7 +1403,7 @@ export class Board3D {
           tg.attributes.position.needsUpdate = true;
           tg.attributes.color.needsUpdate = true;
 
-          const off = new THREE.Vector3(lerp(2.4, 1.35, u), lerp(0.7, 0.42, u), lerp(1.2, 1.9, u));
+          const off = new THREE.Vector3(side * lerp(2.4, 1.35, u), lerp(0.7, 0.42, u), lerp(1.2, 1.9, u));
           cine.pos.lerp(p.clone().add(off), k);
           cine.look.lerp(p.clone().lerp(T, 0.3), k * 1.4);
           if (u >= 1) stick();
@@ -1317,7 +1413,7 @@ export class Board3D {
         // 3. Hold on the winning bed, pushing in slowly
         if (!returnAt) {
           const h = clamp((now - impactAt) / HOLD, 0, 1);
-          const want = T.clone().add(new THREE.Vector3(lerp(1.35, 1.0, h), lerp(0.42, 0.3, h), lerp(1.9, 1.45, h)));
+          const want = T.clone().add(new THREE.Vector3(side * lerp(1.35, 1.0, h), lerp(0.42, 0.3, h), lerp(1.9, 1.45, h)));
           cine.pos.lerp(want, k);
           cine.look.lerp(T, k);
           if (h >= 1) {

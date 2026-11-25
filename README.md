@@ -30,9 +30,16 @@ Then open http://localhost:8000. To deploy, enable GitHub Pages on the branch, o
 | --- | --- |
 | `js/engine.js` | Pure rules engine: board geometry, all game modes, checkouts, legs/sets, brackets |
 | `js/board3d.js` | 3D board (three.js): PBR sisal and chrome spider, LED surround, spotlights with beams, cached shadows, adaptive resolution, flying 3D darts |
+| `js/hand.js` | Rigged hand for the winning-dart cinematic, posed into a dart grip with forward kinematics and a small IK pinch |
 | `js/board.js` | 2D SVG board: fallback without WebGL, and the stats heatmap |
 | `js/app.js` | Screens (lobby, live game, results, stats) and game flow |
 | `js/fx.js` | Web Audio sound effects, caller voice, confetti, callouts |
 | `js/storage.js` | localStorage persistence and lifetime player stats |
 | `js/i18n.js` | Hebrew / English strings |
 | `css/styles.css` | Themes, layout and motion |
+
+## Credits
+
+- [three.js](https://threejs.org) (MIT), vendored in `vendor/three`.
+- Hand model: `generic-hand` from the [WebXR Input Profiles](https://github.com/immersive-web/webxr-input-profiles) project (MIT, © Amazon), in `assets/hand` with its licence.
+- "Olé" sound clip from the original Darts Arena site.
