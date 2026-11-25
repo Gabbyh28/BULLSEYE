@@ -11,7 +11,7 @@ import { loadHand, poseHand, GRIP } from './hand.js';
 
 const U = 0.01; // world units per millimetre
 const BOARD_R = 2.26; // sisal face radius (226mm)
-const HOST_HALF = 2.42; // the square host maps to ±HOST_HALF at the board plane
+const HOST_HALF = 2.3; // the square host maps to ±HOST_HALF at the board plane (tight on the numbers ring)
 const OVERSCAN = 1.4; // the canvas is this much larger than the host square
 const DEG = Math.PI / 180;
 
@@ -530,7 +530,7 @@ export class Board3D {
     this.ledMat = new THREE.MeshStandardMaterial({ color: '#000', emissive: '#fff', emissiveMap: this.ledTex, emissiveIntensity: 2.5 });
     const led = new THREE.Mesh(new THREE.TorusGeometry(3.0, 0.032, 12, 220), this.ledMat);
     led.position.z = 0.13;
-    s.add(led);
+    // The LED ring and its halo are built (big moments drive their materials) but not shown.
     this.led = led;
 
     // Soft halo around the LED ring (replaces a full-screen bloom pass).
@@ -547,7 +547,6 @@ export class Board3D {
     this.haloMat = new THREE.MeshBasicMaterial({ color: '#ffffff', alphaMap: haloTex, transparent: true, opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false });
     const halo = new THREE.Mesh(new THREE.RingGeometry(2.72, 3.2, 160, 1), this.haloMat);
     halo.position.z = 0.14;
-    s.add(halo);
 
     // Lights
     this.hemi = new THREE.HemisphereLight('#ffffff', '#000000', 0.25);
@@ -697,7 +696,7 @@ export class Board3D {
     this.haloMat.color.set(sc.led).lerp(new THREE.Color(sc.led2), 0.3);
     this.haloMat.opacity = Math.min(0.28, 0.08 + sc.bloom * 0.18);
     this.ledLight.color.set(sc.led);
-    this.ledLight.intensity = sc.ledI * 0.1;
+    this.ledLight.intensity = 0; // no LED ring, so no light from it
 
     this.surroundMat.color.set(sc.surround).multiplyScalar(0.55);
     this.wireMat.color.set(skin.wire[0]);

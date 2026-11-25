@@ -668,7 +668,7 @@ button:disabled { cursor: not-allowed; }
 }
 .board-wrap {
   position: relative;
-  width: min(100%, calc(100dvh - 150px), 860px);
+  width: min(100%, calc(100dvh - var(--topbar-h, 64px) - 74px), 1100px);
   animation: board-in .9s var(--ease) both;
 }
 /* Flat (2D) intro only: a 3D CSS transform here would skew taps on the WebGL board. */
@@ -1091,7 +1091,7 @@ button:disabled { cursor: not-allowed; }
   .keypad { order: 5; }
   .scores { order: 6; }
   .feed { order: 7; }
-  .board-wrap { width: min(100%, 560px); }
+  .board-wrap { width: min(100%, 680px); }
   .stage-light { inset: -5% -10% 0; }
   .aim-hint { display: none; }
   .view-game { padding-top: .6rem; }
@@ -1624,7 +1624,7 @@ button:disabled { cursor: not-allowed; }
 html.tv .topbar { display: none; }
 html.tv .view-game { max-width: none; padding: 12px 20px; }
 .game.tv { grid-template-columns: minmax(0, 1.55fr) minmax(380px, 1fr); }
-.game.tv .board-wrap { width: min(100%, calc(100dvh - 90px)); }
+.game.tv .board-wrap { width: min(100%, calc(100dvh - 70px)); }
 .game.tv .side { top: 12px; max-height: calc(100dvh - 24px); }
 .game.tv .controls, .game.tv .keypad, .game.tv .feed, .game.tv .aim-hint { display: none; }
 .game.tv .hero-card .big-num { font-size: clamp(5rem, 9vh, 7.5rem); }
@@ -1763,3 +1763,8 @@ html.remote-mode .nav, html.remote-mode .top-tools { display: none; }
   .wo-vs { grid-template-columns: 1fr; }
 }
 
+/* Grid children may shrink below their content (keeps phones from scrolling sideways). */
+.game > *, .side > * { min-width: 0; }
+.matchbar { min-width: 0; }
+.matchbar .chips { min-width: 0; }
+@media (max-width: 899px) { .tv-toggle { display: none; } }

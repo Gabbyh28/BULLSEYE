@@ -62,7 +62,7 @@ export class Board {
 
   build() {
     const id = this.id;
-    const svg = el('svg', { viewBox: '-240 -240 480 480', class: 'board-svg', role: 'img' });
+    const svg = el('svg', { viewBox: '-231 -231 462 462', class: 'board-svg', role: 'img' });
     this.svg = svg;
     const defs = el('defs', {}, svg);
     defs.innerHTML = `
@@ -175,7 +175,7 @@ export class Board {
     this.hoverPath = el('path', { class: 'hover-bed', d: '' }, svg);
     this.dartLayer = el('g', { class: 'darts' }, svg);
     this.fxLayer = el('g', { class: 'fx' }, svg);
-    this.catcher = el('circle', { r: 240, fill: 'transparent', class: 'catcher' }, svg);
+    this.catcher = el('circle', { r: 231, fill: 'transparent', class: 'catcher' }, svg);
 
     this.host.appendChild(svg);
   }
