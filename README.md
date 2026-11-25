@@ -14,6 +14,8 @@ A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand
 - **Stats:** 3-dart average with a per-leg trend chart, checkout % (darts at a double), head-to-head records, recent form, 180s / 140+ / 100+, best turn, top checkout, treble rate, time per turn, a landing heatmap, favourite beds and match history
 - **Back up & restore:** save players, photos, stats and history to a file and load them on any device
 - **Player photos:** tap an avatar to add a photo (or take one on a phone); it shows on the scoreboard, results, stats and winner banner
+- **Big-screen mode + phone scoring:** a broadcast layout for a TV or laptop with a QR code; phones that scan it get a scoring keypad and the live score (peer-to-peer via PeerJS)
+- **TV-night atmosphere:** 180s strobe the arena in the player's colour with an LED chase and crowd roar; a caller with personality; a crowd in the winning-dart cinematic
 - **Hebrew (RTL) and English**, mobile-first layout, fullscreen, autosave and resume
 
 ## Run it
@@ -43,6 +45,8 @@ npm test
 | `js/hand.js` | Rigged hand for the winning-dart cinematic, posed into a dart grip with forward kinematics and a small IK pinch |
 | `js/board.js` | 2D SVG board: fallback without WebGL, and the stats heatmap |
 | `js/app.js` | Screens (lobby, live game, results, stats) and game flow |
+| `js/caller.js` | The caller's lines (180, game shot, you require N, darts slang) in English and Hebrew |
+| `js/remote.js` | Big-screen rooms and phone remotes (PeerJS signalling, then a direct WebRTC data channel) |
 | `js/fx.js` | Web Audio sound effects, caller voice, confetti, callouts |
 | `js/storage.js` | localStorage persistence and lifetime player stats |
 | `js/i18n.js` | Hebrew / English strings |
@@ -54,4 +58,5 @@ npm test
 
 - [three.js](https://threejs.org) (MIT), vendored in `vendor/three`.
 - Hand model: `generic-hand` from the [WebXR Input Profiles](https://github.com/immersive-web/webxr-input-profiles) project (MIT, © Amazon), in `assets/hand` with its licence.
+- [PeerJS](https://peerjs.com) (MIT) in `vendor/peerjs`, and [qrcode-generator](https://github.com/kazuhikoarase/qrcode-generator) (MIT, Kazuhiko Arase) in `vendor/qrcode`. Phone scoring uses PeerJS's public signalling server only to introduce the devices; the darts then travel directly between them.
 - "Olé" sound clip from the original Darts Arena site.

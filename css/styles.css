@@ -1617,3 +1617,69 @@ button:disabled { cursor: not-allowed; }
 .stage.flash-ton::after { animation: stage-pulse .9s ease-out; }
 @keyframes stage-strobe { 0%, 20%, 40%, 60% { opacity: .85; } 10%, 30%, 50% { opacity: .15; } 100% { opacity: 0; } }
 @keyframes stage-pulse { 0% { opacity: .55; } 100% { opacity: 0; } }
+
+/* ─── big screen (TV) mode ─── */
+.tv-toggle { margin-inline-start: auto; flex: none; }
+.tv-toggle .ico { width: 16px; height: 16px; }
+html.tv .topbar { display: none; }
+html.tv .view-game { max-width: none; padding: 12px 20px; }
+.game.tv { grid-template-columns: minmax(0, 1.55fr) minmax(380px, 1fr); }
+.game.tv .board-wrap { width: min(100%, calc(100dvh - 90px)); }
+.game.tv .side { top: 12px; max-height: calc(100dvh - 24px); }
+.game.tv .controls, .game.tv .keypad, .game.tv .feed, .game.tv .aim-hint { display: none; }
+.game.tv .hero-card .big-num { font-size: clamp(5rem, 9vh, 7.5rem); }
+.game.tv .hero-card .who b { font-size: 2rem; }
+.game.tv .score-card { padding: 1rem 1.2rem; }
+.game.tv .score-card .sc-name b { font-size: 1.35rem; }
+.game.tv .score-card .sc-main { font-size: 3.4rem; }
+.game.tv .score-card .avatar { width: 56px; height: 56px; font-size: 1.7rem; }
+.tv-panel { display: flex; gap: 1rem; align-items: center; padding: 1rem; }
+.tv-panel h4 { display: flex; align-items: center; gap: .5rem; margin: 0 0 .4rem; font-size: 1rem; }
+.tv-panel h4 .ico { width: 18px; height: 18px; }
+.tv-panel p { margin: .2rem 0; font-size: .86rem; color: var(--muted); }
+.tv-qr { flex: none; width: clamp(120px, 18vh, 170px); aspect-ratio: 1; padding: 6px; border-radius: 14px; background: #fff; }
+.tv-qr svg { display: block; width: 100%; height: 100%; }
+.tv-code b { font-family: var(--display); font-weight: 900; font-size: 1.6rem; letter-spacing: .12em; color: var(--text); }
+.tv-peers { display: flex; align-items: center; gap: .45rem; }
+.tv-peers i { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); }
+.tv-peers.on { color: var(--good); font-weight: 700; }
+.tv-peers.on i { background: var(--good); box-shadow: 0 0 10px var(--good); }
+
+/* ─── phone remote page ─── */
+html.remote-mode .nav, html.remote-mode .top-tools { display: none; }
+.remote { display: grid; gap: 10px; max-width: 520px; margin: 0 auto; }
+.rm-status { margin: 0; text-align: center; font-size: .85rem; font-weight: 700; color: var(--muted); }
+.rm-status.connected { color: var(--good); }
+.rm-status.lost, .rm-status.missing, .rm-status.error { color: var(--bad); }
+.rm-card { --pc: var(--accent); padding: .9rem 1rem; border-color: color-mix(in srgb, var(--pc), transparent 50%); }
+.rm-top { display: flex; align-items: center; gap: .7rem; }
+.rm-top .avatar { --pc: inherit; }
+.rm-top div { flex: 1; min-width: 0; }
+.rm-top small { display: block; font-size: .7rem; color: var(--muted); letter-spacing: .08em; text-transform: uppercase; }
+.rm-top b { display: block; font-size: 1.3rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.rm-top strong { font-family: var(--display); font-weight: 900; font-size: 3.4rem; line-height: 1; }
+.rm-turn { display: grid; grid-template-columns: repeat(3, 1fr) 1.1fr; gap: 6px; margin-top: .7rem; }
+.rm-turn span, .rm-turn em { display: grid; place-items: center; height: 44px; border-radius: 10px; background: rgba(0, 0, 0, .25); font-family: var(--display); font-weight: 800; font-size: 1.25rem; font-style: normal; color: var(--muted); }
+.rm-turn span.f { color: var(--text); background: var(--surface-2); }
+.rm-turn em { color: var(--text); background: color-mix(in srgb, var(--pc), transparent 80%); }
+.rm-hint { display: flex; gap: 6px; margin: .6rem 0 0; }
+.rm-hint i { font-style: normal; font-family: var(--display); font-weight: 800; padding: .15rem .55rem; border-radius: 8px; background: color-mix(in srgb, var(--accent), transparent 82%); color: var(--accent); }
+.rm-win { margin: .6rem 0 0; font-weight: 800; color: var(--accent); }
+.rm-players { list-style: none; margin: .7rem 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 6px; }
+.rm-players li { display: flex; gap: .45rem; align-items: baseline; padding: .25rem .6rem; border-radius: 999px; background: var(--surface); font-size: .85rem; }
+.rm-players li.on { background: color-mix(in srgb, var(--pc), transparent 78%); }
+.rm-players span { font-family: var(--display); font-weight: 800; }
+.rm-keypad { padding: .7rem; }
+.rm-keypad .nums button { height: 52px; }
+.rm-actions { display: grid; grid-template-columns: 1fr 1.4fr; gap: 8px; }
+.rm-actions .btn { min-height: 52px; }
+.remote .rm-keypad, .remote .rm-actions { order: 0; }
+.remote { gap: 8px; }
+.rm-card { padding: .7rem .85rem; }
+.rm-top strong { font-size: 2.8rem; }
+.rm-turn span, .rm-turn em { height: 38px; font-size: 1.1rem; }
+.rm-players { margin-top: .5rem; }
+.rm-keypad { padding: .55rem; gap: .5rem; }
+.rm-keypad .nums { gap: 5px; }
+.rm-keypad .nums button { height: 46px; }
+.rm-actions .btn { min-height: 48px; }

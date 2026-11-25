@@ -8,6 +8,7 @@ import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceSt
 import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
 import { call180, callTurnScore, callBust, callGameShot, callUpNext } from './caller.js';
+import { hostRoom, joinRoom, qrSvg, remoteUrl, remoteCodeFromHash } from './remote.js';
 
 const data = load();
 
@@ -74,6 +75,8 @@ function boot() {
   const setTop = () => document.documentElement.style.setProperty('--topbar-h', `${tb.offsetHeight}px`);
   setTop();
   if ('ResizeObserver' in window) new ResizeObserver(setTop).observe(tb);
+  const remoteCode = remoteCodeFromHash();
+  if (remoteCode) return renderRemote(remoteCode);
   go(restored ? 'stats' : 'lobby');
   document.addEventListener('keydown', onKey);
   document.addEventListener('pointerdown', unlockSpeech, { capture: true, passive: true });
@@ -153,6 +156,8 @@ function icon(name) {
     undo: '<path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 0 11H11"/>',
     next: '<path d="M5 12h14M13 6l6 6-6 6"/>',
     x: '<path d="M18 6 6 18M6 6l12 12"/>',
+    tv: '<rect x="2" y="4" width="20" height="13" rx="2"/><path d="M8 21h8M12 17v4"/>',
+    phone: '<rect x="6" y="2" width="12" height="20" rx="2.5"/><path d="M11 18h2"/>',
     download: '<path d="M12 4v11M7 10l5 5 5-5M5 20h14"/>',
     upload: '<path d="M12 20V9M7 14l5-5 5 5M5 4h14"/>',
     camera: '<path d="M14.5 4h-5L7.5 6.5H4a2 2 0 0 0-2 2V18a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V8.5a2 2 0 0 0-2-2h-3.5z"/><circle cx="12" cy="13" r="3.5"/>',
@@ -206,6 +211,7 @@ function destroyBoards() {
 function go(view) {
   state.cinematic = false;
   closePhotoMenu();
+  if (view !== 'game') exitTv();
   clearTimeout(state.autoTimer);
   clearInterval(state.demoTimer);
   state.view = view;
@@ -657,6 +663,10 @@ function renderGame(main) {
       </aside>
     </section>`;
   main.onclick = onGameClick;
+  if (state.tv) {
+    $('.game').classList.add('tv');
+    setTimeout(renderTvPanel, 0);
+  }
   mountBoard('board', $('#game-board'), { skin: prefs.theme, onHit: (d) => onDart(d) }, (b) => {
     b.showDarts(leg().turn, pinfo(activePlayer(leg()).pid).color);
     updateGame();
@@ -685,6 +695,9 @@ function onGameClick(e) {
     onDart(manualDart(v, m));
     state.kpMult = 1;
     renderKeypad();
+  } else if (a === 'tv') {
+    if (state.tv) exitTv();
+    else enterTv();
   } else if (a === 'quit') {
     go('lobby');
   }
@@ -896,6 +909,7 @@ function updateGame(opts = {}) {
   renderKeypad();
   renderScores();
   renderFeed();
+  state.room?.broadcast(remoteState());
 }
 
 function renderMatchbar() {
@@ -910,7 +924,8 @@ function renderMatchbar() {
   if (c.format === 'tournament') bits.push(`<button class="chip btnchip" data-g="bracket">${t('bracket')}</button>`);
   $('#matchbar').innerHTML = `
     <button class="icon-btn" data-g="quit" aria-label="${t('quit')}" title="${t('quit')}">${icon('x')}</button>
-    <div class="chips">${bits.join('')}</div>`;
+    <div class="chips">${bits.join('')}</div>
+    <button class="btn ghost sm tv-toggle" data-g="tv" aria-pressed="${!!state.tv}">${icon('tv')} ${state.tv ? t('tvExit') : t('tvMode')}</button>`;
   const bb = $('[data-g="bracket"]');
   if (bb) bb.onclick = () => openBracket();
 }
@@ -1134,6 +1149,198 @@ function renderFeed() {
           .join('')}</ul>`
       : `<p class="muted">${t('noTurns')}</p>`
   }`;
+}
+
+/* ───────────────────────── big screen + phone scoring ───────────────────────── */
+
+function remoteState() {
+  const L = leg();
+  if (!L || state.view !== 'game') return { v: 1, waiting: true };
+  const p = activePlayer(L);
+  const pi = pinfo(p.pid);
+  const route = isX01(L.mode) && p.score <= 170 && !L.turnDone ? checkout(p.score, 3 - L.turn.length, L.doubleOut) : null;
+  return {
+    v: 1,
+    mode: modeTitle(L.mode),
+    round: L.round,
+    name: pi.name,
+    avatar: pi.avatar,
+    color: pi.color,
+    main: String(mainNumber(L, p)),
+    turn: L.turn.map((d) => d.label),
+    total: L.bust ? 0 : L.turn.reduce((sum, d) => sum + d.points, 0),
+    turnDone: L.turnDone,
+    bust: L.bust,
+    hint: route ?? [],
+    winner: L.winners ? L.winners.map((w) => pinfo(w).name).join(' & ') : '',
+    busy: !!state.cinematic || !!document.querySelector('.modal.open'),
+    players: L.players.map((o) => ({ name: pinfo(o.pid).name, color: pinfo(o.pid).color, score: String(mainNumber(L, o)), on: o === p })),
+  };
+}
+
+function onRemoteMessage(msg) {
+  if (state.view !== 'game' || state.cinematic) return;
+  if (msg.type === 'dart') {
+    const v = Number(msg.value);
+    const m = Number(msg.mult);
+    const ok = (v === 0 && m === 0) || (v >= 1 && v <= 20 && m >= 1 && m <= 3) || (v === 25 && (m === 1 || m === 2));
+    if (ok) onDart(manualDart(v, m));
+  } else if (msg.type === 'undo') undo();
+  else if (msg.type === 'next') advance();
+}
+
+async function enterTv() {
+  state.tv = true;
+  document.documentElement.classList.add('tv');
+  $('.game')?.classList.add('tv');
+  try {
+    if (!document.fullscreenElement) await document.documentElement.requestFullscreen?.();
+  } catch {
+    /* optional */
+  }
+  renderTvPanel();
+  updateGame();
+  if (state.room) return;
+  try {
+    state.room = await hostRoom({
+      onMessage: onRemoteMessage,
+      onPeers: (n) => {
+        state.remotePeers = n;
+        renderTvPanel();
+      },
+    });
+    state.room.broadcast(remoteState());
+  } catch (e) {
+    console.warn('phone scoring unavailable', e);
+    state.roomError = true;
+  }
+  renderTvPanel();
+}
+
+function exitTv() {
+  if (!state.tv && !state.room) return;
+  state.tv = false;
+  document.documentElement.classList.remove('tv');
+  $('.game')?.classList.remove('tv');
+  state.room?.close();
+  state.room = null;
+  state.remotePeers = 0;
+  state.roomError = false;
+  $('#tv-panel')?.remove();
+  try {
+    if (document.fullscreenElement) document.exitFullscreen();
+  } catch {
+    /* optional */
+  }
+  if (state.view === 'game') updateGame();
+}
+
+async function renderTvPanel() {
+  if (!state.tv) return;
+  let panel = $('#tv-panel');
+  if (!panel) {
+    panel = document.createElement('div');
+    panel.id = 'tv-panel';
+    panel.className = 'tv-panel panel';
+    $('.side')?.appendChild(panel);
+  }
+  const room = state.room;
+  if (state.roomError) {
+    panel.innerHTML = `<h4>${icon('phone')} ${t('remoteScan')}</h4><p class="muted">${t('remoteUnavailable')}</p>`;
+    return;
+  }
+  if (!room) {
+    panel.innerHTML = `<h4>${icon('phone')} ${t('remoteScan')}</h4><p class="muted">${t('remoteConnecting')}</p>`;
+    return;
+  }
+  const url = remoteUrl(room.code);
+  const n = state.remotePeers || 0;
+  panel.innerHTML = `
+    <div class="tv-qr" aria-label="${t('remoteScan')}">${await qrSvg(url)}</div>
+    <div class="tv-qr-text">
+      <h4>${icon('phone')} ${t('remoteScan')}</h4>
+      <p>${t('remoteHint')}</p>
+      <p class="tv-code"><small>${t('remoteCode')}</small> <b dir="ltr">${room.code}</b></p>
+      <p class="tv-peers ${n ? 'on' : ''}"><i></i>${n ? t('remotePeers', { n }) : t('remoteNone')}</p>
+    </div>`;
+}
+
+/* The phone keypad page (opened from the QR code). */
+function renderRemote(code) {
+  document.documentElement.classList.add('remote-mode');
+  const main = $('#view');
+  main.className = 'view view-remote';
+  let mult = 1;
+  let last = null;
+  let link = null;
+  main.innerHTML = `
+    <section class="remote">
+      <p class="rm-status" id="rm-status" role="status">${t('remoteConnecting')}</p>
+      <div class="rm-card panel" id="rm-card"><p class="muted">${t('remoteWaiting')}</p></div>
+      <div class="keypad panel rm-keypad" id="rm-keypad"></div>
+      <div class="rm-actions">
+        <button class="btn ghost" data-rm="undo">${icon('undo')} ${t('undo')}</button>
+        <button class="btn primary" data-rm="next">${t('next')} ${icon('next')}</button>
+      </div>
+    </section>`;
+
+  const pad = () => {
+    $('#rm-keypad').innerHTML = `
+      <div class="seg mults" dir="ltr">${[[1, t('single')], [2, t('double')], [3, t('treble')]].map(([v, l]) => `<button class="${mult === v ? 'on' : ''} m${v}" data-mult="${v}">${l}</button>`).join('')}</div>
+      <div class="nums" dir="ltr">
+        ${Array.from({ length: 20 }, (_, i) => `<button data-v="${i + 1}" class="m${mult}">${i + 1}</button>`).join('')}
+        <button data-v="25" data-m="1" class="bull">25</button>
+        <button data-v="25" data-m="2" class="bull hot">BULL</button>
+        <button data-v="0" data-m="0" class="missbtn">${t('miss')}</button>
+      </div>`;
+  };
+  const card = (st) => {
+    last = st;
+    const host = $('#rm-card');
+    if (!st || st.waiting) {
+      host.innerHTML = `<p class="muted">${t('remoteWaiting')}</p>`;
+      return;
+    }
+    host.style.setProperty('--pc', /^#[0-9a-f]{6}$/i.test(st.color) ? st.color : '#f5c46b');
+    host.innerHTML = `
+      <div class="rm-top"><span class="avatar">${esc(st.avatar ?? '🎯')}</span><div><small>${esc(st.mode)} · ${t('round')} ${Number(st.round) || 1}</small><b>${esc(st.name)}</b></div><strong dir="ltr">${esc(st.main)}</strong></div>
+      <div class="rm-turn" dir="ltr">${[0, 1, 2].map((i) => `<span class="${st.turn?.[i] ? 'f' : ''}">${esc(st.turn?.[i] ?? '·')}</span>`).join('')}<em>${st.bust ? t('bust') : Number(st.total) || 0}</em></div>
+      ${st.hint?.length ? `<p class="rm-hint" dir="ltr">${st.hint.map((h) => `<i>${esc(h)}</i>`).join('')}</p>` : ''}
+      ${st.winner ? `<p class="rm-win">🏆 ${esc(st.winner)}</p>` : st.busy ? `<p class="muted">${t('remoteBusy')}</p>` : ''}
+      <ul class="rm-players">${(st.players ?? []).map((o) => `<li class="${o.on ? 'on' : ''}"><b>${esc(o.name)}</b><span dir="ltr">${esc(o.score)}</span></li>`).join('')}</ul>`;
+    $$('#rm-keypad button, [data-rm]').forEach((b) => (b.disabled = !!st.busy || !!st.winner));
+    const nextBtn = $('[data-rm="next"]');
+    if (nextBtn && !st.busy && !st.winner) nextBtn.disabled = !st.turnDone;
+  };
+  pad();
+  const status = (s) => {
+    const el = $('#rm-status');
+    el.className = `rm-status ${s}`;
+    el.textContent = { connecting: t('remoteConnecting'), connected: `✓ ${t('remoteConnected')}`, lost: t('remoteLost'), missing: t('remoteMissing'), error: t('remoteLost') }[s] ?? s;
+  };
+  const send = (msg) => {
+    if (!link?.send(msg)) status('lost');
+    else haptic(12);
+  };
+  main.onclick = (e) => {
+    const b = e.target.closest('button');
+    if (!b || b.disabled) return;
+    if (b.dataset.mult) {
+      mult = +b.dataset.mult;
+      pad();
+      card(last);
+    } else if (b.dataset.v != null) {
+      const v = +b.dataset.v;
+      const m = v === 0 ? 0 : v === 25 ? +b.dataset.m : mult;
+      send({ type: 'dart', value: v, mult: m });
+      mult = 1;
+      pad();
+      card(last);
+    } else if (b.dataset.rm) send({ type: b.dataset.rm });
+  };
+  joinRoom(code, { onState: card, onStatus: status })
+    .then((l) => (link = l))
+    .catch(() => status('error'));
 }
 
 /* ───────────────────────── results ───────────────────────── */
