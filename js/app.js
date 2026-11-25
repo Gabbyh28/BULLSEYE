@@ -236,65 +236,59 @@ function renderLobby(main) {
   const c = data.config;
   const resumable = data.match && !data.match.finished;
   main.innerHTML = `
-    <section class="hero">
-      <div class="hero-copy reveal">
-        <span class="kicker"><i class="live-dot"></i>${t('heroKicker')}</span>
-        <h1><span>${t('heroTitle1')}</span><em>${t('heroTitle2')}</em></h1>
-        <p>${t('heroText')}</p>
-        <div class="hero-actions">
-          <button class="btn primary xl" data-lobby="start">${t('start')} ${icon('next')}</button>
-          ${resumable ? `<button class="btn ghost xl" data-lobby="resume">${t('resume')} · <span dir="ltr">${esc(modeTitle(data.match.config.mode))}</span></button>` : ''}
+    <section class="setup">
+      <div class="setup-stage reveal">
+        <div class="stage-copy">
+          <span class="kicker"><i class="live-dot"></i>${t('heroKicker')}</span>
+          <h1 class="setup-title"><span>${t('heroTitle1')}</span> <em>${t('heroTitle2')}</em></h1>
         </div>
-        <div class="next-up panel">
-          <span class="glyph" dir="ltr">${MODE_GLYPH[c.mode]}</span>
-          <div><small>${t('nextUp')}</small><b id="summary"></b></div>
+        <div class="setup-board"><div class="spot"></div><div class="board-host demo" id="demo-board"></div></div>
+      </div>
+
+      <div class="setup-panel panel reveal" style="--d:.08s">
+        <div class="sp-sec">
+          <header class="sp-head"><span class="sp-no" dir="ltr">1</span><h2>${t('step1t')}</h2><p class="sp-desc" id="mode-desc">${t('m' + c.mode + 'd')}</p></header>
+          <div class="mode-grid compact" role="radiogroup" aria-label="${t('step1t')}">
+            ${MODES.map((m) => `
+              <button class="mode-card ${m.id === c.mode ? 'on' : ''}" role="radio" aria-checked="${m.id === c.mode}" data-mode="${m.id}" title="${t('m' + m.id + 'd')}">
+                <span class="mode-glyph" dir="ltr">${MODE_GLYPH[m.id]}</span>
+                <b>${modeTitle(m.id)}</b>
+              </button>`).join('')}
+          </div>
+          <div class="rules-row" id="rules"></div>
         </div>
-      </div>
-      <div class="hero-board reveal" style="--d:.1s">
-        <div class="spot"></div>
-        <div class="board-host demo" id="demo-board"></div>
-        <div class="floor"></div>
-      </div>
-    </section>
 
-    <section class="step reveal" style="--d:.15s">
-      <header class="step-head"><span class="step-no">01</span><div><h2>${t('step1t')}</h2><p>${t('step1s')}</p></div></header>
-      <div class="mode-grid" role="radiogroup">
-        ${MODES.map((m) => `
-          <button class="mode-card ${m.id === c.mode ? 'on' : ''}" role="radio" aria-checked="${m.id === c.mode}" data-mode="${m.id}">
-            <span class="mode-glyph" dir="ltr">${MODE_GLYPH[m.id]}</span>
-            <b>${modeTitle(m.id)}</b>
-            <small>${t('m' + m.id + 'd')}</small>
-          </button>`).join('')}
+        <div class="sp-sec">
+          <header class="sp-head"><span class="sp-no" dir="ltr">2</span><h2>${t('step2t')}</h2>
+            <button class="btn ghost sm add-player" data-lobby="add">${icon('plus')} ${t('addPlayer')}</button></header>
+          <ol class="roster compact" id="roster"></ol>
+        </div>
+
+        <div class="sp-sec">
+          <header class="sp-head"><span class="sp-no" dir="ltr">3</span><h2>${t('step3t')}</h2></header>
+          <div class="arena-row" id="arenas" role="radiogroup" aria-label="${t('step3t')}"></div>
+        </div>
+
+        <footer class="sp-foot">
+          <div class="start-summary"><b id="summary2"></b><small>${t('startHint')}</small></div>
+          <p class="form-error" id="lobby-error" role="alert"></p>
+          <div class="sp-actions">
+            ${resumable ? `<button class="btn ghost" data-lobby="resume">${t('resume')}</button>` : ''}
+            <button class="btn primary" data-lobby="start">${t('start')} ${icon('next')}</button>
+          </div>
+        </footer>
       </div>
-      <div class="rules panel" id="rules"></div>
-    </section>
-
-    <section class="step reveal" style="--d:.2s">
-      <header class="step-head"><span class="step-no">02</span><div><h2>${t('step2t')}</h2><p>${t('step2s')}</p></div></header>
-      <ol class="roster" id="roster"></ol>
-      <button class="btn ghost add-player" data-lobby="add">${icon('plus')} ${t('addPlayer')}</button>
-    </section>
-
-    <section class="step reveal" style="--d:.25s">
-      <header class="step-head"><span class="step-no">03</span><div><h2>${t('step3t')}</h2><p>${t('step3s')}</p></div></header>
-      <div class="arena-grid" id="arenas"></div>
-    </section>
-
-    <div class="start-bar">
-      <div class="start-inner panel">
-        <div class="start-summary"><b id="summary2"></b><small>${t('startHint')}</small></div>
-        <p class="form-error" id="lobby-error" role="alert"></p>
-        <button class="btn primary xl" data-lobby="start">${t('start')} ${icon('next')}</button>
-      </div>
-    </div>`;
+    </section>`;
 
   renderRules();
   renderRoster();
   renderArenas();
   updateSummary();
 
-  mountBoard('demo', $('#demo-board'), { interactive: false, skin: prefs.theme, cinematic: true });
+  // On phones the board is a small emblem: the light 2D board is plenty there.
+  const small = matchMedia('(max-width: 699px)').matches;
+  if (small) state.demo = new Board($('#demo-board'), { interactive: false, skin: prefs.theme });
+  else mountBoard('demo', $('#demo-board'), { interactive: false, skin: prefs.theme, cinematic: true });
   const demoThrow = () => {
     if (!state.demo) return;
     if (state.demo.darts.length >= 3) state.demo.clearDarts();
@@ -302,16 +296,9 @@ function renderLobby(main) {
     const p = randomPointFor(...pick);
     state.demo.addDart(makeDart(pick[0], pick[1], p.x, p.y), { color: COLORS[Math.floor(Math.random() * 4)], index: state.demo.darts.length });
   };
-  if (prefs.motion !== 'off') {
+  if (prefs.motion !== 'off' && !small) {
     setTimeout(demoThrow, 900);
     state.demoTimer = setInterval(demoThrow, 1700);
-  }
-
-  const bar = $('.start-bar');
-  if ('IntersectionObserver' in window) {
-    bar.classList.add('tucked');
-    const io = new IntersectionObserver(([en]) => bar.classList.toggle('tucked', en.isIntersecting || en.boundingClientRect.top > 0), { threshold: 0 });
-    io.observe($('.hero-actions'));
   }
 
   main.onclick = onLobbyClick;
@@ -331,33 +318,26 @@ function refreshLobbyBits() {
 function renderRules() {
   const c = data.config;
   const x01 = isX01(c.mode);
+  const desc = $('#mode-desc');
+  if (desc) desc.textContent = t('m' + c.mode + 'd');
   $('#rules').innerHTML = `
-    <div class="rules-desc">
-      <span class="eyebrow">${t('rules')}</span>
-      <h3>${modeTitle(c.mode)}</h3>
-      <p>${t('m' + c.mode + 'd')}</p>
+    ${x01 ? `
+    <label class="switch sm" title="${t('doubleOutHint')}">
+      <input type="checkbox" data-cfg="doubleOut" ${c.doubleOut ? 'checked' : ''}>
+      <span class="track"><span class="thumb"></span></span>
+      <span><b>${t('doubleOut')}</b></span>
+    </label>` : ''}
+    <div class="seg sm" role="radiogroup" aria-label="${t('format')}">
+      ${['single', 'legs', 'tournament'].map((f) => `<button role="radio" aria-checked="${c.format === f}" class="${c.format === f ? 'on' : ''}" data-format="${f}">${t('fmt' + f[0].toUpperCase() + f.slice(1))}</button>`).join('')}
     </div>
-    <div class="rules-opts">
-      ${x01 ? `
-      <label class="switch">
-        <input type="checkbox" data-cfg="doubleOut" ${c.doubleOut ? 'checked' : ''}>
-        <span class="track"><span class="thumb"></span></span>
-        <span><b>${t('doubleOut')}</b><small>${t('doubleOutHint')}</small></span>
-      </label>` : ''}
-      <div class="field">
-        <span class="label">${t('format')}</span>
-        <div class="seg" role="radiogroup">
-          ${['single', 'legs', 'tournament'].map((f) => `<button role="radio" aria-checked="${c.format === f}" class="${c.format === f ? 'on' : ''}" data-format="${f}">${t('fmt' + f[0].toUpperCase() + f.slice(1))}</button>`).join('')}
-        </div>
-      </div>
-      ${c.format !== 'single' ? stepper('legs', t('legsToWin'), c.legs, 1, 11) : ''}
-      ${c.format === 'legs' ? stepper('sets', t('setsToWin'), c.sets, 1, 7) : ''}
-    </div>`;
+    ${c.format !== 'single' ? stepper('legs', t('legsToWin'), c.legs, 1, 11) : ''}
+    ${c.format === 'legs' ? stepper('sets', t('setsToWin'), c.sets, 1, 7) : ''}`;
 }
 
 function stepper(key, label, value, min, max) {
-  return `<div class="field"><span class="label">${label}</span>
-    <div class="stepper" data-key="${key}" data-min="${min}" data-max="${max}">
+  const short = key === 'legs' ? t('legs') : t('sets');
+  return `<div class="field inline"><span class="label"><span class="lbl-long">${label}</span><span class="lbl-short">${short}</span></span>
+    <div class="stepper sm" data-key="${key}" data-min="${min}" data-max="${max}">
       <button data-step="-1" aria-label="-">−</button><output dir="ltr">${value}</output><button data-step="1" aria-label="+">+</button>
     </div></div>`;
 }
@@ -368,19 +348,16 @@ function renderRoster() {
     .map(
       (p, i) => `
     <li class="player-row" data-idx="${i}" style="--pc:${p.color}">
-      <span class="grip" data-grip aria-hidden="true">${icon('grip')}</span>
-      <span class="order" dir="ltr">${String(i + 1).padStart(2, '0')}</span>
-      <button class="avatar" data-avatar="${i}" aria-label="avatar">${p.avatar}</button>
+      <span class="grip" data-grip title="${t('moveUp')} / ${t('moveDown')}">${icon('grip')}</span>
+      <button class="avatar sm" data-avatar="${i}" aria-label="avatar">${p.avatar}</button>
       <input class="name" maxlength="24" value="${esc(p.name)}" data-name="${i}" aria-label="${t('playerN', { n: i + 1 })}">
-      <div class="swatches">${COLORS.map((col) => `<button class="sw ${col === p.color ? 'on' : ''}" style="--c:${col}" data-color="${i}:${col}" aria-label="${col}"></button>`).join('')}</div>
-      <span class="row-tools">
-        <button class="icon-btn sm" data-move="${i}:-1" aria-label="${t('moveUp')}" ${i === 0 ? 'disabled' : ''}>${icon('up')}</button>
-        <button class="icon-btn sm" data-move="${i}:1" aria-label="${t('moveDown')}" ${i === data.roster.length - 1 ? 'disabled' : ''}>${icon('down')}</button>
-        <button class="icon-btn sm danger" data-remove="${i}" aria-label="${t('remove')}" ${data.roster.length <= 1 ? 'disabled' : ''}>${icon('x')}</button>
-      </span>
+      <button class="color-dot" data-color-cycle="${i}" style="--c:${p.color}" aria-label="colour"></button>
+      <button class="icon-btn xs danger" data-remove="${i}" aria-label="${t('remove')}" ${data.roster.length <= 1 ? 'disabled' : ''}>${icon('x')}</button>
     </li>`,
     )
     .join('');
+  list.classList.toggle('many', data.roster.length > 4);
+  $('.setup')?.classList.toggle('many', data.roster.length > 4);
   $('[data-lobby="add"]').disabled = data.roster.length >= 8;
 }
 
@@ -388,10 +365,10 @@ function renderArenas() {
   const host = $('#arenas');
   if (!host) return;
   host.innerHTML = THEMES.map((th) => {
-    const s = BOARD_SKINS[th];
-    return `<button class="arena-card th-${th} ${th === prefs.theme ? 'on' : ''}" data-arena="${th}" aria-pressed="${th === prefs.theme}">
-      <span class="arena-scene"><span class="mini-board" style="--d:${s.dark};--l:${s.light};--r:${s.red};--g:${s.green};--rim:${s.rim[0]}"></span></span>
-      <b>${t('th_' + th)}</b>
+    const sk = BOARD_SKINS[th];
+    return `<button class="arena-chip th-${th} ${th === prefs.theme ? 'on' : ''}" data-arena="${th}" role="radio" aria-checked="${th === prefs.theme}" title="${t('th_' + th)}">
+      <span class="mini-board" style="--d:${sk.dark};--l:${sk.light};--r:${sk.red};--g:${sk.green};--rim:${sk.rim[0]}"></span>
+      <small>${t('th_' + th)}</small>
     </button>`;
   }).join('');
 }
@@ -404,9 +381,7 @@ function updateSummary() {
   if (c.format === 'tournament') parts.push(t('fmtTournament'));
   parts.push(`${data.roster.length} ${data.roster.length === 1 ? t('player') : t('players')}`);
   const txt = parts.join(' · ');
-  ['#summary', '#summary2'].forEach((s) => $(s) && ($(s).textContent = txt));
-  const g = $('.next-up .glyph');
-  if (g) g.textContent = MODE_GLYPH[c.mode];
+  ['#summary', '#summary2'].forEach((sel) => $(sel) && ($(sel).textContent = txt));
 }
 
 function onLobbyClick(e) {
@@ -434,9 +409,15 @@ function onLobbyClick(e) {
     p.avatar = AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length];
     b.textContent = p.avatar;
     b.animate([{ transform: 'scale(.7) rotate(-20deg)' }, { transform: 'scale(1)' }], { duration: 260, easing: 'cubic-bezier(.3,1.6,.5,1)' });
-  } else if (b.dataset.color) {
-    const [i, col] = b.dataset.color.split(':');
-    data.roster[+i].color = col;
+  } else if (b.dataset.colorCycle != null) {
+    const p = data.roster[+b.dataset.colorCycle];
+    const taken = new Set(data.roster.filter((o) => o !== p).map((o) => o.color));
+    let i = COLORS.indexOf(p.color);
+    for (let n = 0; n < COLORS.length; n++) {
+      i = (i + 1) % COLORS.length;
+      if (!taken.has(COLORS[i])) break;
+    }
+    p.color = COLORS[i];
     renderRoster();
   } else if (b.dataset.move) {
     const [i, d] = b.dataset.move.split(':').map(Number);
@@ -486,27 +467,35 @@ function moveRoster(from, to) {
 function bindRosterDrag() {
   const list = $('#roster');
   let drag = null;
+  const clearDrop = () => $$('.player-row.drop', list).forEach((r) => r.classList.toggle('drop', false));
   list.addEventListener('pointerdown', (e) => {
     const grip = e.target.closest('[data-grip]');
     if (!grip) return;
     const row = grip.closest('.player-row');
-    drag = { row, idx: +row.dataset.idx, y0: e.clientY, h: row.getBoundingClientRect().height + 10 };
+    drag = { row, idx: +row.dataset.idx, x0: e.clientX, y0: e.clientY, target: null };
     row.classList.add('dragging');
     grip.setPointerCapture(e.pointerId);
     e.preventDefault();
   });
   list.addEventListener('pointermove', (e) => {
     if (!drag) return;
-    const dy = e.clientY - drag.y0;
-    drag.row.style.transform = `translateY(${dy}px)`;
-    drag.target = Math.max(0, Math.min(data.roster.length - 1, drag.idx + Math.round(dy / drag.h)));
+    drag.row.style.transform = `translate(${e.clientX - drag.x0}px, ${e.clientY - drag.y0}px)`;
+    drag.row.style.pointerEvents = 'none';
+    const over = document.elementFromPoint(e.clientX, e.clientY)?.closest('.player-row');
+    drag.row.style.pointerEvents = '';
+    clearDrop();
+    if (over && over !== drag.row) {
+      over.classList.add('drop');
+      drag.target = +over.dataset.idx;
+    } else drag.target = null;
   });
   const end = () => {
     if (!drag) return;
     const { idx, target, row } = drag;
     drag = null;
-    row.classList.remove('dragging');
+    row.classList.toggle('dragging', false);
     row.style.transform = '';
+    clearDrop();
     if (target != null && target !== idx) moveRoster(idx, target);
   };
   list.addEventListener('pointerup', end);
