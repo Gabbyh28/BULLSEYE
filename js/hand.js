@@ -4,7 +4,7 @@
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 
-const HAND_URL = new URL('../assets/hand/right.glb', import.meta.url).href;
+const HAND_URL = new URL('../assets/hand/right.gltf', import.meta.url).href;
 let pending = null;
 
 /** Loads (once) and returns { root, mesh, bones } for the right hand. */
