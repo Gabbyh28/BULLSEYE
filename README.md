@@ -15,7 +15,6 @@ A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand
 - **Back up & restore:** save players, photos, stats and history to a file and load them on any device
 - **Player photos, saved to names:** tap an avatar to add a photo (or take one on a phone). It is saved to that name on the device, so typing the name again brings the photo back; it shows on the scoreboard, results, stats and winner banner
 - **Walk-on intros:** before a match, spotlights, each player's photo and career numbers, the caller's introduction, a face-off for two players, then GAME ON (skippable; can be turned off)
-- **180 instant replay:** the camera swoops in and the three darts fly back in, one by one, in slow motion
 - **Big-screen mode + phone scoring:** a broadcast layout for a TV or laptop with a QR code; phones that scan it get a scoring keypad and the live score (peer-to-peer via PeerJS)
 - **TV-night atmosphere:** 180s strobe the arena in the player's colour with an LED chase and crowd roar; a caller with personality; a crowd in the winning-dart cinematic
 - **Hebrew (RTL) and English**, mobile-first layout, fullscreen, autosave and resume

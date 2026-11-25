@@ -1763,30 +1763,3 @@ html.remote-mode .nav, html.remote-mode .top-tools { display: none; }
   .wo-vs { grid-template-columns: 1fr; }
 }
 
-/* ─── instant replay ─── */
-.b3d-replay {
-  position: absolute;
-  top: 6%;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  align-items: center;
-  gap: .6rem;
-  padding: .45rem 1.1rem;
-  border-radius: 6px;
-  background: rgba(8, 8, 12, .82);
-  border-left: 4px solid var(--accent);
-  color: #fff;
-  font-family: var(--display);
-  font-weight: 900;
-  font-size: clamp(1.1rem, 2.4vw, 1.6rem);
-  letter-spacing: .16em;
-  animation: replay-in .45s cubic-bezier(.2, .9, .2, 1) both;
-  white-space: nowrap;
-}
-[lang='he'] .b3d-replay { font-family: var(--font); letter-spacing: .04em; }
-.b3d-replay i { width: 11px; height: 11px; border-radius: 50%; background: #ff3b3b; animation: live 1s infinite; }
-.b3d-replay.out { animation: replay-out .35s ease forwards; }
-@keyframes replay-in { from { opacity: 0; transform: translate(-50%, -14px); } }
-@keyframes replay-out { to { opacity: 0; transform: translate(-50%, -10px); } }
-.board-host.replaying .b3d-canvas { filter: saturate(1.15) contrast(1.05); }

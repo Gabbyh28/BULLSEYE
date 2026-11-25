@@ -820,22 +820,6 @@ function handleEvents(events, before, after, player) {
       confetti(220);
       call180(getLang());
       bigMoment('max', pinfo(player.pid).color);
-      if (state.board?.replayDarts && prefs.motion !== 'off') {
-        state.cinematic = true;
-        state.replaying = true;
-        setTimeout(() => {
-          if (!state.board?.replayDarts || state.view !== 'game') {
-            state.cinematic = state.replaying = false;
-            return;
-          }
-          state.board
-            .replayDarts({ label: t('instantReplay'), onLand: () => sfx.hit({ value: 20, mult: 3, points: 60 }) })
-            .then(() => {
-              state.cinematic = state.replaying = false;
-              if (prefs.autoNext && leg()?.turnDone && !leg().winners) state.autoTimer = setTimeout(() => advance(), 700);
-            });
-        }, 1500);
-      }
     }, 260);
   } else if (has('ton') && record) {
     setTimeout(() => {
@@ -861,7 +845,7 @@ function handleEvents(events, before, after, player) {
   if (has('closed') && !has('turn-end')) {
     // subtle feedback only
   }
-  if (has('turn-end') && !after.winners && prefs.autoNext && !state.replaying) {
+  if (has('turn-end') && !after.winners && prefs.autoNext) {
     const delay = has('bust') ? 2100 : has('180') ? 2600 : 1500;
     const btn = $('[data-g="next"]');
     btn?.style.setProperty('--auto', `${delay}ms`);
