@@ -1364,11 +1364,13 @@ export class Board3D {
       const FLIGHT = 3000;
       const HOLD = 1500;
       const RETURN = 1300;
-      const t0 = performance.now() - (fromClip ? INTRO + RELEASE : 0);
+      // After a player's own video (which already chased the dart to the board), only the last
+      // moment of the flight plays: the dart lands in the exact winning bed, seen close up.
+      const t0 = performance.now() - (fromClip ? INTRO + RELEASE + FLIGHT * 0.86 : 0);
       let last = performance.now();
       if (fromClip) {
-        cine.pos.copy(HW).add(new THREE.Vector3(side * 2.6, 0.75, 1.6));
-        cine.look.copy(HW).lerp(T, 0.3);
+        cine.pos.copy(T).add(new THREE.Vector3(side * 1.6, 0.5, 2.3));
+        cine.look.copy(T);
       }
       let holder = null;
       let R = null;
