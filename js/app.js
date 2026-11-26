@@ -1,14 +1,16 @@
 // BULLSEYE — application shell, screens and game flow.
 import {
   MODES, CRICKET_KEYS, isX01, modeInfo, makeDart, randomPointFor, checkout, createMatch, throwDart,
-  nextTurn, commitLeg, activePlayer, targetsFor, aroundTarget, activeBracketMatch, legsTarget, setsTarget,
+  nextTurn, commitLeg, activePlayer, currentThrower, targetsFor, aroundTarget, activeBracketMatch, legsTarget, setsTarget,
 } from './engine.js';
 import { Board, BOARD_SKINS } from './board.js';
 import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, voiceChoices, loadClip, fireworks, winnerBanner } from './fx.js';
-import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup, photoKey } from './storage.js';
+import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup, photoKey, rivalry, cleanTheme, doublesReport } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
-import { call180, callTurnScore, callBust, callGameShot, callUpNext, callIntro, callVersus, callGameOn } from './caller.js';
+import { call180, callTurnScore, callBust, callGameShot, callUpNext, callIntro, callVersus, callGameOn, callRivalry } from './caller.js';
 import { playWalkOn } from './walkon.js';
+import { FLIGHTS, BARRELS, drawFlight, drawDartPreview } from './dartstyle.js';
+import { PRESETS, WALLS, installTheme, expandTheme } from './themes.js';
 import { hostRoom, joinRoom, qrSvg, remoteUrl, remoteCodeFromHash } from './remote.js';
 
 const data = load();
@@ -50,6 +52,8 @@ const clone = (o) => JSON.parse(JSON.stringify(o));
 /** What goes inside an avatar: the player's photo if they have one, else their emoji. */
 const photoOf = (name) => data.photos?.[photoKey(name)] ?? null;
 const face = (p) => {
+  // a team shows both members, side by side
+  if (p?.mates?.length) return `<span class="duo">${p.mates.map((m) => `<span>${face(m)}</span>`).join('')}</span>`;
   const src = p && photoOf(p.name);
   return src ? `<img src="${src}" alt="" draggable="false">` : p?.avatar ?? '🎯';
 };
@@ -93,6 +97,13 @@ function applyPrefs() {
   const root = document.documentElement;
   root.lang = prefs.lang;
   root.dir = prefs.lang === 'he' ? 'rtl' : 'ltr';
+  if (prefs.theme === 'custom' && !prefs.customTheme) prefs.theme = 'championship';
+  // the custom arena writes its colours straight onto the page
+  const custom = installTheme(prefs.customTheme);
+  const tokens = Object.keys(expandTheme(PRESETS.classic).vars);
+  tokens.forEach((k) => root.style.removeProperty(k));
+  if (prefs.theme === 'custom' && custom) Object.entries(custom.vars).forEach(([k, v]) => root.style.setProperty(k, v));
+  root.dataset.tone = prefs.theme === 'custom' && custom?.light ? 'light' : prefs.theme === 'daylight' ? 'light' : 'dark';
   root.dataset.theme = prefs.theme;
   root.dataset.motion = prefs.motion;
   root.dataset.quality = prefs.quality;
@@ -134,6 +145,7 @@ function renderTopbar() {
     <div class="top-tools">
       <div class="theme-dots" role="radiogroup" aria-label="theme">
         ${THEMES.map((th) => `<button role="radio" aria-checked="${th === prefs.theme}" title="${t('th_' + th)}" data-theme-pick="${th}" class="dot th-${th}"></button>`).join('')}
+        ${prefs.customTheme ? `<button role="radio" aria-checked="${prefs.theme === 'custom'}" title="${esc(prefs.customTheme.name)}" data-theme-pick="custom" class="dot th-custom" style="background:conic-gradient(${prefs.customTheme.accent} 0 50%, ${prefs.customTheme.green} 0)"></button>` : ''}
       </div>
       <button class="icon-btn" data-action="settings" title="${t('settings')}" aria-label="${t('settings')}">${icon('gear')}</button>
       <button class="icon-btn hide-sm" data-action="fullscreen" title="${t('fullscreen')}" aria-label="${t('fullscreen')}">${icon('expand')}</button>
@@ -171,6 +183,8 @@ function icon(name) {
     plus: '<path d="M12 5v14M5 12h14"/>',
     flag: '<path d="M4 22V4M4 4h13l-2 4 2 4H4"/>',
     board: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>',
+    dart: '<path d="M3 21l7-7"/><path d="M10 14l3.5-3.5"/><path d="M13.5 10.5 16 5l3 3-5.5 2.5"/><path d="M16 5l3-2 2 2-2 3"/>',
+    palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4-4-7.4-9-7.4Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/>',
     pad: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   }[name];
   return `<svg class="ico ico-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
@@ -360,6 +374,12 @@ function renderRules() {
     <div class="seg sm" role="radiogroup" aria-label="${t('format')}">
       ${['single', 'legs', 'tournament'].map((f) => `<button role="radio" aria-checked="${c.format === f}" class="${c.format === f ? 'on' : ''}" data-format="${f}">${t('fmt' + f[0].toUpperCase() + f.slice(1))}</button>`).join('')}
     </div>
+    ${c.format !== 'tournament' && [4, 6].includes(data.roster.length) ? `
+    <label class="switch sm" title="${t('teamsHint')}">
+      <input type="checkbox" data-cfg="teams" ${c.teams ? 'checked' : ''}>
+      <span class="track"><span class="thumb"></span></span>
+      <span><b>${t('teams')}</b></span>
+    </label>` : ''}
     ${c.format !== 'single' ? stepper('legs', t('legsToWin'), c.legs, 1, 11) : ''}
     ${c.format === 'legs' ? stepper('sets', t('setsToWin'), c.sets, 1, 7) : ''}`;
 }
@@ -380,15 +400,18 @@ function renderRoster() {
     <li class="player-row" data-idx="${i}" style="--pc:${p.color}">
       <span class="grip" data-grip title="${t('moveUp')} / ${t('moveDown')}">${icon('grip')}</span>
       <button class="avatar sm ${photoOf(p.name) ? 'has-photo' : ''}" data-avatar="${i}" aria-label="${t('photoMenu')}" aria-haspopup="menu">${face(p)}<i class="cam-badge" aria-hidden="true">${icon('camera')}</i></button>
+      ${teamsOn() ? `<span class="team-tag t${Math.floor(i / 2)}" title="${t('teamN', { n: 'ABC'[Math.floor(i / 2)] })}">${'ABC'[Math.floor(i / 2)]}</span>` : ''}
       <input class="name" maxlength="24" value="${esc(p.name)}" data-name="${i}" aria-label="${t('playerN', { n: i + 1 })}">
       <button class="color-dot" data-color-cycle="${i}" style="--c:${p.color}" aria-label="colour"></button>
       <button class="icon-btn xs danger" data-remove="${i}" aria-label="${t('remove')}" ${data.roster.length <= 1 ? 'disabled' : ''}>${icon('x')}</button>
     </li>`,
     )
     .join('');
+  list.classList.toggle('teamed', teamsOn());
   list.classList.toggle('many', data.roster.length > 4);
   $('.setup')?.classList.toggle('many', data.roster.length > 4);
   $('[data-lobby="add"]').disabled = data.roster.length >= 8;
+  if ($('#rules')) renderRules();
 }
 
 function renderArenas() {
@@ -400,7 +423,102 @@ function renderArenas() {
       <span class="mini-board" style="--d:${sk.dark};--l:${sk.light};--r:${sk.red};--g:${sk.green};--rim:${sk.rim[0]}"></span>
       <small>${t('th_' + th)}</small>
     </button>`;
-  }).join('');
+  }).join('') + customChip();
+}
+
+/** The custom arena chip: builds one the first time, then selects it, then edits it. */
+function customChip() {
+  const ct = prefs.customTheme;
+  const on = prefs.theme === 'custom';
+  if (!ct) return `<button class="arena-chip add" data-arena-custom="new" title="${t('customArena')}"><span class="mini-board plus">${icon('palette')}</span><small>${t('th_custom')}</small></button>`;
+  return `<button class="arena-chip th-custom ${on ? 'on' : ''}" data-arena-custom="${on ? 'edit' : 'pick'}" role="radio" aria-checked="${on}" title="${on ? t('editArena') : esc(ct.name)}">
+    <span class="mini-board" style="--d:${ct.dark};--l:${ct.light};--r:${ct.red};--g:${ct.green};--rim:${ct.accent}"></span>
+    ${on ? `<i class="chip-pen" aria-hidden="true">${icon('pen')}</i>` : ''}
+    <small>${esc(ct.name)}</small>
+  </button>`;
+}
+
+/* ── theme builder ── */
+
+function openThemeBuilder() {
+  const before = { theme: prefs.theme, custom: prefs.customTheme };
+  let cur = cleanTheme(prefs.customTheme ?? { ...PRESETS.classic, name: t('th_custom') });
+  const preview = () => {
+    prefs.customTheme = cur;
+    prefs.theme = 'custom';
+    applyPrefs();
+    const mb = $('.tb-preview .mini-board');
+    if (mb) ['d:dark', 'l:light', 'r:red', 'g:green', 'rim:accent'].forEach((kv) => {
+      const [v, k] = kv.split(':');
+      mb.style.setProperty('--' + v, cur[k]);
+    });
+    $$('.tb [data-tb-mode]').forEach((b) => b.classList.toggle('on', b.dataset.tbMode === cur.mode));
+    $$('.tb [data-tb-wall]').forEach((b) => b.classList.toggle('on', b.dataset.tbWall === cur.wall));
+    $$('.tb input[type=color]').forEach((i) => (i.value = cur[i.dataset.tbColor]));
+  };
+  const colour = (k, label) => `<label class="tb-col"><input type="color" data-tb-color="${k}" value="${cur[k]}"><span>${label}</span></label>`;
+  openModal(`
+    <div class="tb">
+      <h2>${icon('palette')} ${t('customArena')}</h2>
+      <div class="tb-top">
+        <div class="tb-preview"><span class="mini-board"></span></div>
+        <div class="tb-fields">
+          <label class="field"><span class="label">${t('arenaName')}</span><input class="tb-name" maxlength="24" value="${esc(cur.name)}"></label>
+          <div class="seg sm" role="radiogroup" aria-label="${t('themeBase')}">
+            <button data-tb-mode="dark">${t('baseDark')}</button><button data-tb-mode="light">${t('baseLight')}</button>
+          </div>
+        </div>
+      </div>
+      <div class="tb-group"><h4>${t('presets')}</h4><div class="tb-presets">
+        ${Object.entries(PRESETS).map(([k, pr]) => `<button class="tb-preset" data-tb-preset="${k}" style="--a:${pr.accent};--g:${pr.green};--bg:${pr.mode === 'light' ? '#f3f1ea' : '#11131a'}"><i></i>${t('pre_' + k)}</button>`).join('')}
+      </div></div>
+      <div class="tb-group"><h4>${t('accent')} · ${t('lightTone')}</h4><div class="tb-cols">${colour('accent', t('accent'))}${colour('lightColor', t('lightTone'))}</div></div>
+      <div class="tb-group"><h4>${t('boardColours')}</h4><div class="tb-cols">${colour('dark', t('segDark'))}${colour('light', t('segLight'))}${colour('red', t('segRed'))}${colour('green', t('segGreen'))}</div></div>
+      <div class="tb-group"><h4>${t('wall')}</h4><div class="tb-walls">${WALLS.map((w) => `<button data-tb-wall="${w}">${t('wall_' + w)}</button>`).join('')}</div></div>
+      <div class="result-actions">
+        <button class="btn ghost" data-tb="cancel">${t('cancel')}</button>
+        <button class="btn primary" data-tb="use">${t('useArena')}</button>
+      </div>
+    </div>`, {
+    dismissable: false,
+    onClick: (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.tbMode) cur.mode = b.dataset.tbMode;
+      else if (b.dataset.tbWall) cur.wall = b.dataset.tbWall;
+      else if (b.dataset.tbPreset) cur = cleanTheme({ ...PRESETS[b.dataset.tbPreset], name: t('pre_' + b.dataset.tbPreset) });
+      else if (b.dataset.tb === 'cancel') {
+        prefs.theme = before.theme;
+        prefs.customTheme = before.custom;
+        closeModal();
+        applyPrefs();
+        renderTopbar();
+        renderArenas();
+        return;
+      } else if (b.dataset.tb === 'use') {
+        cur.name = $('.tb-name').value.trim() || t('th_custom');
+        prefs.customTheme = cleanTheme(cur);
+        prefs.theme = 'custom';
+        closeModal();
+        applyPrefs();
+        renderTopbar();
+        renderArenas();
+        save();
+        return;
+      } else return;
+      const nm = $('.tb-name');
+      if (b.dataset.tbPreset && nm) nm.value = cur.name;
+      sfx.tick();
+      preview();
+    },
+  });
+  $('.tb').addEventListener('input', (e) => {
+    const k = e.target.dataset.tbColor;
+    if (!k) return;
+    cur[k] = e.target.value;
+    preview();
+  });
+  preview();
 }
 
 function updateSummary() {
@@ -409,7 +527,8 @@ function updateSummary() {
   if (isX01(c.mode) && c.doubleOut) parts.push(t('doubleOut'));
   if (c.format === 'legs') parts.push(`${t('legsToWin')} ${c.legs}${c.sets > 1 ? ` · ${t('sets')} ${c.sets}` : ''}`);
   if (c.format === 'tournament') parts.push(t('fmtTournament'));
-  parts.push(`${data.roster.length} ${data.roster.length === 1 ? t('player') : t('players')}`);
+  if (teamsOn()) parts.push(t('teamsOf', { n: data.roster.length / 2 }));
+  else parts.push(`${data.roster.length} ${data.roster.length === 1 ? t('player') : t('players')}`);
   const txt = parts.join(' · ');
   ['#summary', '#summary2'].forEach((sel) => $(sel) && ($(sel).textContent = txt));
 }
@@ -428,7 +547,7 @@ function onLobbyClick(e) {
     sfx.tick();
   } else if (b.dataset.format) {
     c.format = b.dataset.format;
-    renderRules();
+    renderRoster();
   } else if (b.dataset.step) {
     const st = b.closest('.stepper');
     const k = st.dataset.key;
@@ -453,6 +572,13 @@ function onLobbyClick(e) {
   } else if (b.dataset.remove != null) {
     data.roster.splice(+b.dataset.remove, 1); // the photo stays saved to the name
     renderRoster();
+  } else if (b.dataset.arenaCustom) {
+    if (b.dataset.arenaCustom === 'pick') {
+      prefs.theme = 'custom';
+      applyPrefs();
+      renderTopbar();
+      renderArenas();
+    } else openThemeBuilder();
   } else if (b.dataset.arena) {
     prefs.theme = b.dataset.arena;
     applyPrefs();
@@ -477,6 +603,7 @@ function onLobbyClick(e) {
 function onLobbyInput(e) {
   if (e.target.dataset.cfg) {
     data.config[e.target.dataset.cfg] = e.target.checked;
+    if (e.target.dataset.cfg === 'teams') renderRoster();
   } else if (e.target.dataset.name != null) {
     const i = +e.target.dataset.name;
     const p = data.roster[i];
@@ -541,6 +668,7 @@ function openPhotoMenu(anchor, idx) {
     <p class="pm-for">${p.name.trim() ? t('photoFor', { name: esc(p.name.trim()) }) : t('photoNeedsName')}</p>
     <button role="menuitem" data-pm="upload" ${p.name.trim() ? '' : 'disabled'}>${icon('camera')} ${has ? t('photoChange') : t('photoAdd')}</button>
     ${has ? `<button role="menuitem" data-pm="remove">${icon('x')} ${t('photoRemove')}</button>` : `<button role="menuitem" data-pm="emoji"><span class="pm-emoji">${AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length]}</span> ${t('nextEmoji')}</button>`}
+    <button role="menuitem" data-pm="darts" ${p.name.trim() ? '' : 'disabled'}>${icon('dart')} ${t('customiseDarts')}</button>
     <input type="file" accept="image/*" hidden>`;
   document.body.appendChild(menu);
   const r = anchor.getBoundingClientRect();
@@ -560,6 +688,9 @@ function openPhotoMenu(anchor, idx) {
     else if (a === 'remove') {
       delete data.photos[photoKey(p.name)];
       refresh();
+    } else if (a === 'darts') {
+      closePhotoMenu();
+      openDartCustomiser(p);
     } else if (a === 'emoji') {
       p.avatar = AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length];
       refresh();
@@ -584,6 +715,60 @@ function openPhotoMenu(anchor, idx) {
   };
   setTimeout(() => document.addEventListener('pointerdown', state.photoMenuAway, true), 0);
   menu.querySelector('button')?.focus();
+}
+
+/* ── dart customiser ── */
+
+function openDartCustomiser(p) {
+  const key = photoKey(p.name);
+  data.darts ??= {};
+  const cur = { flight: 'classic', barrel: 'silver', color: '', ...(data.darts[key] ?? {}) };
+  const swatches = ['', ...COLORS, '#ffffff', '#16171b'];
+  const paintChips = () =>
+    $$('canvas[data-fl]').forEach((cv) => {
+      const ctx = cv.getContext('2d');
+      ctx.clearRect(0, 0, cv.width, cv.height);
+      drawFlight(ctx, cv.width, cv.height, cur.color || p.color, cv.dataset.fl);
+    });
+  const draw = () => {
+    const cv = $('.dc-preview canvas');
+    if (cv) drawDartPreview(cv, { ...cur, color: cur.color || p.color });
+    $$('.dc-opt').forEach((b) => {
+      const on = cur[b.dataset.k] === b.dataset.v;
+      b.classList.toggle('on', on);
+      b.setAttribute('aria-checked', on);
+    });
+  };
+  openModal(`
+    <div class="dart-custom">
+      <h2>${t('dartsFor', { name: esc(p.name.trim()) })}</h2>
+      <div class="dc-preview" style="--pc:${p.color}"><canvas aria-hidden="true"></canvas></div>
+      <div class="dc-group"><h4>${t('flight')}</h4><div class="dc-row" role="radiogroup" aria-label="${t('flight')}">
+        ${FLIGHTS.map((f) => `<button class="dc-opt fl" role="radio" data-k="flight" data-v="${f}"><canvas data-fl="${f}" width="48" height="64" aria-hidden="true"></canvas><small>${t('fl_' + f)}</small></button>`).join('')}
+      </div></div>
+      <div class="dc-group"><h4>${t('flightColor')}</h4><div class="dc-row swatches" role="radiogroup" aria-label="${t('flightColor')}">
+        ${swatches.map((c) => `<button class="dc-opt sw ${c ? '' : 'auto'}" role="radio" data-k="color" data-v="${c}" style="--c:${c || p.color}" title="${c || t('playerColour')}" aria-label="${c || t('playerColour')}"></button>`).join('')}
+      </div></div>
+      <div class="dc-group"><h4>${t('barrel')}</h4><div class="dc-row" role="radiogroup" aria-label="${t('barrel')}">
+        ${Object.entries(BARRELS).map(([k, b]) => `<button class="dc-opt br" role="radio" data-k="barrel" data-v="${k}"><i style="--b0:${b.css[0]};--b1:${b.css[1]};--b2:${b.css[2]}"></i><small>${t('br_' + k)}</small></button>`).join('')}
+      </div></div>
+      <div class="result-actions"><button class="btn primary" data-dc="done">${t('done')}</button></div>
+    </div>`, {
+    onClick: (e) => {
+      const b = e.target.closest('button');
+      if (!b) return;
+      if (b.dataset.dc === 'done') return closeModal();
+      if (!b.dataset.k) return;
+      cur[b.dataset.k] = b.dataset.v;
+      data.darts[key] = { ...cur };
+      save();
+      sfx.tick();
+      if (b.dataset.k === 'color') paintChips();
+      draw();
+    },
+  });
+  paintChips();
+  requestAnimationFrame(draw);
 }
 
 function moveRoster(from, to) {
@@ -660,7 +845,18 @@ function startMatch() {
 
 const match = () => data.match;
 const leg = () => data.match?.leg;
-const pinfo = (pid) => match().roster.find((p) => p.id === pid);
+const pinfo = (pid) => {
+  const m = match();
+  const team = m.teams?.find((tm) => tm.id === pid);
+  if (team) return { ...team, mates: team.members.map((id) => m.roster.find((p) => p.id === id)).filter(Boolean) };
+  return m.roster.find((p) => p.id === pid);
+};
+/** Who is holding the darts: the player, or in team play the teammate whose turn it is. */
+const throwerInfo = (L = leg()) => pinfo(currentThrower(L));
+/** A player's dart style from the customiser (flight, barrel, colour), saved to their name. */
+const styleOf = (name) => data.darts?.[photoKey(name ?? '')] ?? null;
+/** Teams are on when switched on, with 4 or 6 players, outside knockouts. */
+const teamsOn = (c = data.config, n = data.roster.length) => !!c.teams && c.format !== 'tournament' && (n === 4 || n === 6);
 
 function renderGame(main) {
   if (!data.match) return go('lobby');
@@ -690,7 +886,7 @@ function renderGame(main) {
     setTimeout(renderTvPanel, 0);
   }
   mountBoard('board', $('#game-board'), { skin: prefs.theme, onHit: (d) => onDart(d) }, (b) => {
-    b.showDarts(leg().turn, pinfo(activePlayer(leg()).pid).color);
+    b.showDarts(leg().turn, pinfo(activePlayer(leg()).pid).color, styleOf(throwerInfo().name));
     updateGame();
   });
   if (leg().winners) setTimeout(showResult, 200);
@@ -744,6 +940,7 @@ function onDart(dart) {
   const { leg: next, events } = throwDart(before, dart);
   m.leg = next;
   const color = pinfo(player.pid).color;
+  const style = styleOf(throwerInfo(before).name);
   const hitSound = () => (dart.value === 1 ? sfx.ole() : sfx.hit(dart));
   save();
 
@@ -751,11 +948,12 @@ function onDart(dart) {
   if (next.winners && state.board?.playWinningThrow && prefs.motion !== 'off') {
     state.cinematic = true;
     updateGame({ popDart: next.turn.length - 1 });
-    const pi = pinfo(player.pid);
+    const pi = pinfo(currentThrower(before));
     sfx.whoosh();
     state.board
       .playWinningThrow(dart, {
         color,
+        style,
         title: t('winningDart'),
         name: pi.name,
         avatar: face(pi),
@@ -774,7 +972,7 @@ function onDart(dart) {
     return;
   }
 
-  state.board.addDart(dart, { color, index: next.turn.length - 1 });
+  state.board.addDart(dart, { color, index: next.turn.length - 1, style });
   hitSound();
   haptic(dart.mult >= 2 ? 20 : 10);
   updateGame({ popDart: next.turn.length - 1 });
@@ -870,8 +1068,9 @@ function advance(silent = false) {
   save();
   updateGame();
   if (!silent) {
-    const p = pinfo(activePlayer(leg()).pid);
-    toast(`<span class="toast-av" style="--pc:${p.color}">${face(p)}</span><span><small>${t('upNext')}</small><b>${esc(p.name)}</b></span>`);
+    const p = throwerInfo();
+    const unit = pinfo(activePlayer(leg()).pid);
+    toast(`<span class="toast-av" style="--pc:${p.color}">${face(p)}</span><span><small>${unit.team ? esc(unit.name) : t('upNext')}</small><b>${esc(p.name)}</b></span>`);
     sfx.whoosh();
   }
   announceTurn();
@@ -906,7 +1105,7 @@ function undo() {
   if (!prev) return;
   data.match = prev;
   closeModal();
-  state.board.showDarts(leg().turn, pinfo(activePlayer(leg()).pid).color);
+  state.board.showDarts(leg().turn, pinfo(activePlayer(leg()).pid).color, styleOf(throwerInfo().name));
   save();
   updateGame();
   sfx.tick();
@@ -991,6 +1190,7 @@ function renderHero(opts) {
   const L = leg();
   const p = activePlayer(L);
   const pi = pinfo(p.pid);
+  const thr = pi.team ? throwerInfo(L) : pi;
   const total = L.turn.reduce((s, d) => s + d.points, 0);
   const host = $('#hero');
   const prevNum = host.dataset.num;
@@ -998,8 +1198,8 @@ function renderHero(opts) {
   host.style.setProperty('--pc', pi.color);
   host.innerHTML = `
     <div class="hero-top">
-      <span class="avatar lg" style="--pc:${pi.color}">${face(pi)}</span>
-      <div class="who"><small><i class="live-dot"></i>${t('throwing')}</small><b>${esc(pi.name)}</b></div>
+      <span class="avatar lg" style="--pc:${pi.color}">${face(thr)}</span>
+      <div class="who"><small><i class="live-dot"></i>${pi.team ? esc(pi.name) : t('throwing')}</small><b>${esc(thr.name)}</b></div>
       <div class="big-num ${L.bust ? 'bust' : ''}" dir="ltr" data-v="${num}">${num}</div>
     </div>
     ${scoreline(L, p)}
@@ -1173,7 +1373,8 @@ function renderFeed() {
       ? `<ul>${turns
           .map((x) => {
             const pi = pinfo(x.pid);
-            return `<li style="--pc:${pi.color}"><span class="avatar xs">${face(pi)}</span><b>${esc(pi.name)}</b><span class="fd" dir="ltr">${x.darts.map((d) => `<i class="m${d.mult}">${d.label}</i>`).join('')}</span><em dir="ltr" class="${x.bust ? 'bad' : x.counted >= 100 ? 'hot' : ''}">${x.bust ? 'BUST' : x.counted}</em></li>`;
+            const who = x.thrower != null && x.thrower !== x.pid ? pinfo(x.thrower) : pi; // in teams, whoever threw
+            return `<li style="--pc:${pi.color}"><span class="avatar xs">${face(who)}</span><b>${esc(who.name)}</b><span class="fd" dir="ltr">${x.darts.map((d) => `<i class="m${d.mult}">${d.label}</i>`).join('')}</span><em dir="ltr" class="${x.bust ? 'bad' : x.counted >= 100 ? 'hot' : ''}">${x.bust ? 'BUST' : x.counted}</em></li>`;
           })
           .join('')}</ul>`
       : `<p class="muted">${t('noTurns')}</p>`
@@ -1198,15 +1399,43 @@ async function runWalkOn() {
   if (!m) return;
   state.cinematic = true;
   const lang = getLang();
-  const players = (m.config.format === 'tournament' ? m.leg.players.map((p) => pinfo(p.pid)) : m.roster).map((p) => ({
+  const units = m.teams ? m.teams.map((tm) => pinfo(tm.id)) : m.config.format === 'tournament' ? m.leg.players.map((p) => pinfo(p.pid)) : m.roster;
+  const players = units.map((p) => ({
     name: p.name,
     color: p.color,
     face: face(p),
-    chips: walkOnChips(p.name),
+    team: !!p.team,
+    // a team card lists each member with their average (or debut)
+    chips: p.team
+      ? p.mates.map((mm) => {
+          const s = data.stats[photoKey(mm.name)];
+          return { label: mm.name, value: s?.x01Darts ? avg3(s).toFixed(1) : '★' };
+        })
+      : walkOnChips(p.name),
   }));
+  let rival = null;
+  if (players.length === 2 && !m.teams) {
+    const r = rivalry(players[0].name, players[1].name, data.history);
+    if (r.played) {
+      const [a, b] = players.map((p) => p.name);
+      const lead = r.a === r.b ? '' : r.a > r.b ? a : b;
+      rival = {
+        played: r.played,
+        a: r.a,
+        b: r.b,
+        last: r.last,
+        headline: lead ? t('rivalLeads', { name: lead, w: Math.max(r.a, r.b), l: Math.min(r.a, r.b) }) : t('rivalLevel', { n: r.a }),
+        streak: r.streak >= 2 ? t('rivalStreak', { name: r.streakA ? a : b, n: r.streak }) : '',
+        lead,
+        w: Math.max(r.a, r.b),
+        l: Math.min(r.a, r.b),
+      };
+    } else rival = { played: 0, headline: t('rivalFirst') };
+  }
   await playWalkOn({
     players,
-    text: { introducing: t('introducing'), vs: t('versus'), gameOn: t('gameOnBig'), skip: t('skip'), debut: t('debut') },
+    rival,
+    text: { introducing: t('introducing'), introTeam: t('introTeam'), vs: t('versus'), gameOn: t('gameOnBig'), skip: t('skip'), debut: t('debut'), last5: t('rivalLast5') },
     hooks: {
       onPlayer: (p) => {
         sfx.crowd(0.7);
@@ -1215,6 +1444,7 @@ async function runWalkOn() {
       onVs: (a, b) => {
         sfx.boom();
         callVersus(a.name, b.name, lang);
+        if (rival?.played) callRivalry({ lead: rival.lead, w: rival.w, l: rival.l, lang });
       },
       onGameOn: () => {
         sfx.fanfare(false);
@@ -1508,7 +1738,7 @@ function editDart(i, value, mult) {
     if (res.leg.turnDone) break; // a bust or a finish ends the turn early
   }
   data.match = m;
-  state.board.showDarts(m.leg.turn, pinfo(player.pid).color);
+  state.board.showDarts(m.leg.turn, pinfo(player.pid).color, styleOf(throwerInfo(m.leg).name));
   sfx.tick();
   save();
   updateGame({ popDart: Math.min(i, m.leg.turn.length - 1) });
@@ -1521,7 +1751,10 @@ function reportFromMatch(m, winners) {
   return {
     at: Date.now(),
     config: clone(m.config),
-    roster: m.roster.map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color })),
+    roster: m.roster.map((p) => ({ id: p.id, name: p.name, avatar: p.avatar, color: p.color })).concat(
+      (m.teams ?? []).map((tm) => ({ id: tm.id, name: tm.name, avatar: tm.avatar, color: tm.color, team: true,
+        mates: tm.members.map((id) => m.roster.find((p) => p.id === id)).filter(Boolean).map((p) => ({ name: p.name, avatar: p.avatar })) })),
+    ),
     legLog: clone(m.legLog ?? []),
     winners: [...winners],
   };
@@ -1581,11 +1814,11 @@ function renderReport(main) {
     lg.turns.forEach((tt) => {
       if (!bestTurn || tt.counted > bestTurn.counted) bestTurn = { ...tt, legNo: lg.legNo };
       if (tt.checkout && (!bestOut || tt.startScore > bestOut.startScore)) bestOut = { ...tt, legNo: lg.legNo };
-      if (x01 && tt.counted === 180) moments.push({ icon: '★', text: t('momentMax', { name: esc(rname(rep, tt.pid).name), leg: lg.legNo }) });
+      if (x01 && tt.counted === 180) moments.push({ icon: '★', text: t('momentMax', { name: esc(rname(rep, tt.thrower ?? tt.pid).name), leg: lg.legNo }) });
     }),
   );
-  if (bestTurn?.counted && !(x01 && bestTurn.counted === 180)) moments.unshift({ icon: '↑', text: t('momentBestTurn', { name: esc(rname(rep, bestTurn.pid).name), n: bestTurn.counted, leg: bestTurn.legNo }) });
-  if (bestOut) moments.unshift({ icon: '◎', text: t('momentCheckout', { name: esc(rname(rep, bestOut.pid).name), n: bestOut.startScore, leg: bestOut.legNo }) });
+  if (bestTurn?.counted && !(x01 && bestTurn.counted === 180)) moments.unshift({ icon: '↑', text: t('momentBestTurn', { name: esc(rname(rep, bestTurn.thrower ?? bestTurn.pid).name), n: bestTurn.counted, leg: bestTurn.legNo }) });
+  if (bestOut) moments.unshift({ icon: '◎', text: t('momentCheckout', { name: esc(rname(rep, bestOut.thrower ?? bestOut.pid).name), n: bestOut.startScore, leg: bestOut.legNo }) });
   if (x01) {
     const quickest = rep.legLog
       .filter((lg) => lg.winners.length === 1)
@@ -2067,6 +2300,7 @@ function renderStats(main) {
           ${h2hList(s)}
         </div>
       </div>
+      ${doublesPanel(s)}
       ${data.history.length ? `<div class="history panel reveal" style="--d:.2s"><h4>${t('history')}</h4><ul>${data.history.slice(0, 15).map((h) => `
         <li><span class="glyph" dir="ltr">${esc(MODE_GLYPH[h.mode] ?? h.mode)}</span><span>${h.players.map((n) => (h.winners.includes(n) ? `<b>🏆 ${esc(n)}</b>` : esc(n))).join(' · ')}</span><time>${new Date(h.at).toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time></li>`).join('')}</ul></div>` : ''}
       `}
@@ -2248,6 +2482,31 @@ function bindChart(el) {
 }
 
 /** Last 10 match results for a player, newest first: W/L chips (letter + colour). */
+/** Weak spots: hit rate per double, with the best and weakest called out and a tip. */
+function doublesPanel(s) {
+  const { rows, best, weak } = doublesReport(s);
+  const head = `<h4>${t('doublesTitle')}</h4><p class="muted dbl-sub">${t('doublesSub')}</p>`;
+  if (!rows.length) return `<div class="doubles panel reveal" style="--d:.19s">${head}<p class="muted">${t('dblEmpty')}</p></div>`;
+  const tip = best ? (best.d === 'BULL' ? t('dblTipBull', { p: best.pct }) : t('dblTip', { d: best.d, p: best.pct, n: best.value })) : '';
+  const card = (r, label, tone) =>
+    r ? `<div class="dbl-card ${tone}"><small>${label}</small><b dir="ltr">${r.d === 'BULL' ? 'BULL' : r.d}</b><em dir="ltr">${r.pct}%</em><span>${t('dblDarts', { h: r.h, a: r.a })}</span></div>` : '';
+  return `<div class="doubles panel reveal" style="--d:.19s">
+    ${head}
+    <div class="dbl-top">
+      ${card(best, t('bestDouble'), 'good')}
+      ${card(weak, t('weakDouble'), 'bad')}
+      ${tip ? `<p class="dbl-tip">💡 ${tip}</p>` : ''}
+    </div>
+    <ul class="dbl-bars">${rows.slice(0, 12).map((r) => `
+      <li class="${r === best ? 'best' : r === weak ? 'weak' : ''}">
+        <b dir="ltr">${r.d}</b>
+        <span class="bar" role="img" aria-label="${r.d} ${r.pct}%"><i style="width:${Math.max(2, r.pct)}%"></i></span>
+        <em dir="ltr">${r.pct}%</em>
+        <small dir="ltr">${r.h}/${r.a}</small>
+      </li>`).join('')}</ul>
+  </div>`;
+}
+
 function formStrip(name) {
   const key = name.toLowerCase();
   const games = data.history.filter((h) => h.players.some((n) => n.toLowerCase() === key)).slice(0, 10);

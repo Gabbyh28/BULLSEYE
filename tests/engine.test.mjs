@@ -182,3 +182,38 @@ test('turn records carry the standing after the turn, and finished legs are logg
   assert.equal(c.match.legLog[0].turns[1].after, 0);
   assert.equal(c.match.legLog[0].turns[0].darts[0].x, undefined, 'coordinates are dropped');
 });
+
+test('teams: 4 players make two teams that share a score and alternate throwers', () => {
+  const m = E.createMatch({ mode: '501', doubleOut: true, format: 'single', teams: true }, roster(4));
+  assert.equal(m.teams.length, 2);
+  assert.deepEqual(m.teams[0].members, [1, 2]);
+  let L = m.leg;
+  assert.equal(L.players.length, 2, 'two scoring units');
+  assert.equal(E.currentThrower(L), 1);
+  L = E.nextTurn(throwAll(L, [D(20, 3), D(20, 3), D(20, 3)]));
+  assert.equal(E.currentThrower(L), 3, 'team B, first member');
+  L = E.nextTurn(throwAll(L, [D(1, 1), D(1, 1), D(1, 1)]));
+  assert.equal(E.currentThrower(L), 2, 'team A, second member');
+  assert.equal(L.players[0].score, 321, 'team score shared');
+  L = throwAll(L, [D(20, 1)]);
+  assert.equal(L.turn.length, 1);
+  const rec = E.nextTurn(throwAll(L, [D(20, 1), D(20, 1)])).turns.at(-1);
+  assert.equal(rec.thrower, 2, 'turn credited to the member who threw');
+  assert.equal(rec.pid, m.teams[0].id);
+});
+
+test('teams are ignored for knockouts and odd player counts', () => {
+  assert.equal(E.createMatch({ mode: '501', format: 'tournament', teams: true }, roster(4)).teams, null);
+  assert.equal(E.createMatch({ mode: '501', format: 'single', teams: true }, roster(3)).teams, null);
+});
+
+test('team legs: the next leg keeps the teams and rotates the starter', () => {
+  const m = E.createMatch({ mode: '301', doubleOut: false, format: 'legs', legs: 2, teams: true }, roster(4));
+  m.leg.players[0].score = 20;
+  m.leg.turnStart = 20;
+  const r = E.throwDart(m.leg, D(20, 1));
+  const c = E.commitLeg({ ...m, leg: r.leg });
+  assert.equal(c.match.leg.players.length, 2);
+  assert.equal(c.match.leg.players[0].pid, m.teams[1].id, 'team B starts leg 2');
+  assert.deepEqual(c.match.leg.players[0].members, [3, 4]);
+});

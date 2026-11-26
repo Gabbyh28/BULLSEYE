@@ -8,6 +8,7 @@ import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
 import { SECTORS, R, scoreAt } from './engine.js';
 import { BOARD_SKINS } from './board.js';
 import { loadHand, poseHand, GRIP } from './hand.js';
+import { FLIGHTS, BARRELS, drawFlight } from './dartstyle.js';
 
 const U = 0.01; // world units per millimetre
 const BOARD_R = 2.26; // sisal face radius (226mm)
@@ -258,25 +259,6 @@ function drawWall(ctx, S, sc) {
   }
 }
 
-function drawFlight(ctx, w, h, color) {
-  const g = ctx.createLinearGradient(0, 0, w, h);
-  g.addColorStop(0, shade(color, 40));
-  g.addColorStop(0.5, color);
-  g.addColorStop(1, shade(color, -70));
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, w, h);
-  ctx.strokeStyle = 'rgba(255,255,255,.75)';
-  ctx.lineWidth = w * 0.05;
-  ctx.beginPath();
-  ctx.moveTo(w * 0.15, h * 0.9);
-  ctx.lineTo(w * 0.6, h * 0.45);
-  ctx.lineTo(w * 0.15, h * 0.1);
-  ctx.stroke();
-  ctx.strokeStyle = 'rgba(0,0,0,.35)';
-  ctx.lineWidth = w * 0.02;
-  ctx.strokeRect(0, 0, w, h);
-}
-
 function shade(hex, amt) {
   const n = parseInt(hex.replace('#', '').slice(0, 6), 16);
   const c = (v) => clamp(v + amt, 0, 255);
@@ -354,14 +336,27 @@ function shared() {
   return SHARED;
 }
 
-function buildDart(color) {
+const barrelCache = new Map();
+
+/** A dart in the player's colour; style = { flight, barrel, color } from the customiser. */
+function buildDart(color, style) {
+  style ??= {};
   const S = shared();
+  const fc = /^#[0-9a-f]{6}$/i.test(style.color ?? '') ? style.color : color;
+  const pattern = FLIGHTS.includes(style.flight) ? style.flight : 'classic';
+  const fkey = `${fc}|${pattern}`;
+  const bk = BARRELS[style.barrel] ? style.barrel : 'silver';
+  if (!barrelCache.has(bk)) {
+    const b = BARRELS[bk];
+    barrelCache.set(bk, bk === 'silver' ? S.tungsten : new THREE.MeshStandardMaterial({ color: b.color, metalness: b.metalness, roughness: b.roughness }));
+  }
+  color = fc;
   if (!shaftCache.has(color)) shaftCache.set(color, new THREE.MeshStandardMaterial({ color: shade(color, -60), metalness: 0.85, roughness: 0.28 }));
-  if (!flightCache.has(color)) {
+  if (!flightCache.has(fkey)) {
     flightCache.set(
-      color,
+      fkey,
       new THREE.MeshStandardMaterial({
-        map: canvasTex(128, 256, (ctx, w, h) => drawFlight(ctx, w, h, color)),
+        map: canvasTex(128, 256, (ctx, w, h) => drawFlight(ctx, w, h, fc, pattern)),
         roughness: 0.4,
         metalness: 0,
         side: THREE.DoubleSide,
@@ -370,11 +365,11 @@ function buildDart(color) {
   }
   const g = new THREE.Group();
   g.add(new THREE.Mesh(S.point, S.steel));
-  g.add(new THREE.Mesh(S.barrel, S.tungsten));
+  g.add(new THREE.Mesh(S.barrel, barrelCache.get(bk)));
   g.add(new THREE.Mesh(S.shaft, shaftCache.get(color)));
   const flights = new THREE.Group();
   for (let k = 0; k < 4; k++) {
-    const m = new THREE.Mesh(S.flight, flightCache.get(color));
+    const m = new THREE.Mesh(S.flight, flightCache.get(fkey));
     m.rotation.y = k * (Math.PI / 2) + Math.PI / 4;
     flights.add(m);
   }
@@ -668,7 +663,7 @@ export class Board3D {
 
   setSkin(name) {
     const skin = BOARD_SKINS[name] ?? BOARD_SKINS.championship;
-    const sc = SCENES[name] ?? SCENES.championship;
+    const sc = SCENES[name] ?? skin.scene ?? SCENES.championship;
     this.skinName = name;
     const fimg = this.faceTex.image;
     drawFace(fimg.getContext('2d'), fimg.width, skin);
@@ -1010,9 +1005,9 @@ export class Board3D {
     return { x: ((p.x + 1) / 2) * r.width + (r.left - h.left), y: ((1 - p.y) / 2) * r.height + (r.top - h.top) };
   }
 
-  addDart(dart, { animate = true, color = '#f4c46b', index = 0 } = {}) {
+  addDart(dart, { animate = true, color = '#f4c46b', index = 0, style } = {}) {
     if (dart.x == null) return null;
-    const model = buildDart(color);
+    const model = buildDart(color, style);
     const holder = new THREE.Group();
     holder.add(model);
     // Axis points out of the board, flights slightly raised as on a real throw.
@@ -1295,7 +1290,7 @@ export class Board3D {
     return this.runWinningThrow(dart, { ...opts, hand });
   }
 
-  runWinningThrow(dart, { color = '#f5c46b', title, name, skip, avatar, detail, onImpact, hand = null } = {}) {
+  runWinningThrow(dart, { color = '#f5c46b', style, title, name, skip, avatar, detail, onImpact, hand = null } = {}) {
     return new Promise((resolve) => {
       if (dart.x == null) {
         onImpact?.();
@@ -1313,7 +1308,7 @@ export class Board3D {
       const HW = new THREE.Vector3(1.3, -0.1, 13.4); // hand at the moment of release
       arm.root.position.copy(HW).add(new THREE.Vector3(0, -2.4, 0));
       this.scene.add(arm.root);
-      const model = buildDart(color);
+      const model = buildDart(color, style);
       model.position.y = -0.55;
       arm.slot.add(model);
 
@@ -1589,9 +1584,9 @@ export class Board3D {
     this.shadowDirty = true;
   }
 
-  showDarts(darts, color) {
+  showDarts(darts, color, style) {
     this.clearDarts(false);
-    darts.forEach((d, i) => this.addDart(d, { animate: false, color, index: i }));
+    darts.forEach((d, i) => this.addDart(d, { animate: false, color, index: i, style }));
     this.shadowDirty = true;
   }
 

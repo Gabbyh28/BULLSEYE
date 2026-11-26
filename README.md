@@ -6,16 +6,18 @@ A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand
 
 - **8 game modes:** 501 · 301 · 701 (optional double-out), Cricket, Around the Clock, Shanghai, Killer, High Score
 - **Formats:** single game, legs & sets (rotating starter), knockout tournament with byes and a live bracket
+- **Team play:** with 4 or 6 players, switch on Teams to pair 1 & 2, 3 & 4… Each team shares one score, teammates alternate turns automatically, and every dart still counts toward the stats of whoever threw it
 - **Two ways to score:** tap the board (hover/drag-to-aim preview with a touch loupe) or use the S/D/T keypad
 - **Checkout routes** for every finish up to 170, aware of how many darts are left
 - **Undo anything:** darts, turns, even a leg-winning dart; or tap one dart of the current turn to fix just that dart (the turn is rescored)
 - **Match report:** a worm chart of every leg, a stats table, key moments and player of the match
 - **Callouts:** 180, ton-plus, bust, game shot, Shanghai, Killer, plus confetti, synthesised sound effects and an optional caller voice
-- **6 arenas:** Championship, Neon Night, Old Tavern, Daylight, Carbon Blaze and Candy Royale. Each restyles the room and the board.
-- **Stats:** 3-dart average with a per-leg trend chart, checkout % (darts at a double), head-to-head records, recent form, 180s / 140+ / 100+, best turn, top checkout, treble rate, time per turn, a landing heatmap, favourite beds and match history
+- **6 arenas, plus your own:** Championship, Neon Night, Old Tavern, Daylight, Carbon Blaze and Candy Royale each restyle the room and the board. The arena builder makes a custom one (dark or light base, accent, board colours, wall, lights) with live preview and seasonal packs: Winter, Summer, Party
+- **Dart customiser:** each player picks a flight design (classic, solid, stripes, checker, star, flame), flight colour and barrel (tungsten, black, gold), saved to their name and shown on the 3D board and in the winning-dart cinematic
+- **Stats:** 3-dart average with a per-leg trend chart, checkout % (darts at a double), head-to-head records, recent form, a Doubles panel (hit rate per double, best and weakest, and a tip on what to leave), 180s / 140+ / 100+, best turn, top checkout, treble rate, time per turn, a landing heatmap, favourite beds and match history
 - **Back up & restore:** save players, photos, stats and history to a file and load them on any device
 - **Player photos, saved to names:** tap an avatar to add a photo (or take one on a phone). It is saved to that name on the device, so typing the name again brings the photo back; it shows on the scoreboard, results, stats and winner banner
-- **Walk-on intros:** before a match, spotlights, each player's photo and career numbers, the caller's introduction, a face-off for two players, then GAME ON (skippable; can be turned off)
+- **Walk-on intros:** before a match, spotlights, each player's photo and career numbers, the caller's introduction, a face-off for two players, then GAME ON (skippable; can be turned off). One-on-one face-offs show the rivalry: head-to-head record, last five results and current streak, read out by the caller
 - **Big-screen mode + phone scoring:** a broadcast layout for a TV or laptop with a QR code; phones that scan it get a scoring keypad and the live score (peer-to-peer via PeerJS)
 - **TV-night atmosphere:** 180s strobe the arena in the player's colour with an LED chase and crowd roar; a caller with personality; a crowd in the winning-dart cinematic
 - **Hebrew (RTL) and English**, mobile-first layout, fullscreen, autosave and resume
@@ -32,7 +34,7 @@ Then open http://localhost:8000. To deploy, enable GitHub Pages on the branch, o
 
 ## Tests
 
-The rules engine has a test suite (Node 18+, no dependencies). GitHub runs it on every push and pull request.
+The rules engine and stats have a test suite (Node 18+, no dependencies). GitHub runs it on every push and pull request.
 
 ```bash
 npm test
@@ -45,6 +47,8 @@ npm test
 | `js/engine.js` | Pure rules engine: board geometry, all game modes, checkouts, legs/sets, brackets |
 | `js/board3d.js` | 3D board (three.js): PBR sisal and chrome spider, LED surround, spotlights with beams, cached shadows, adaptive resolution, flying 3D darts |
 | `js/hand.js` | Rigged hand for the winning-dart cinematic, posed into a dart grip with forward kinematics and a small IK pinch |
+| `js/dartstyle.js` | Flight artwork and barrel finishes, shared by the 3D darts and the customiser preview |
+| `js/themes.js` | Custom arena: expands a few choices into board colours, a 3D scene and page colour tokens; seasonal packs |
 | `js/board.js` | 2D SVG board: fallback without WebGL, and the stats heatmap |
 | `js/app.js` | Screens (lobby, live game, results, stats) and game flow |
 | `js/caller.js` | The caller's lines (180, game shot, you require N, darts slang) in English and Hebrew |
@@ -53,8 +57,8 @@ npm test
 | `js/fx.js` | Web Audio sound effects, caller voice, confetti, callouts |
 | `js/storage.js` | localStorage persistence and lifetime player stats |
 | `js/i18n.js` | Hebrew / English strings |
-| `tests/engine.test.mjs` | Rules-engine tests: board geometry, checkouts, every game mode, formats, undo safety |
-| `tests/storage.test.mjs` | Checkout %, head-to-head, backup round trip, and cleaning of hostile backup files |
+| `tests/engine.test.mjs` | Rules-engine tests: board geometry, checkouts, every game mode, formats, undo safety, teams |
+| `tests/storage.test.mjs` | Checkout %, per-double hit rates, team stats, rivalry records, head-to-head, backup round trip, and cleaning of hostile backup files |
 | `css/styles.css` | Themes, layout and motion |
 
 ## Credits

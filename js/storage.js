@@ -4,10 +4,11 @@ import { isX01 } from './engine.js';
 const KEY = 'bullseye:v1';
 
 const defaults = () => ({
-  prefs: { theme: 'championship', lang: null, sound: true, voice: true, autoNext: true, motion: 'on', quality: 'high', input: 'board', walkOn: true, voiceName: {} },
-  config: { mode: '501', doubleOut: true, format: 'single', legs: 3, sets: 1 },
+  prefs: { theme: 'championship', lang: null, sound: true, voice: true, autoNext: true, motion: 'on', quality: 'high', input: 'board', walkOn: true, voiceName: {}, customTheme: null },
+  config: { mode: '501', doubleOut: true, format: 'single', legs: 3, sets: 1, teams: false },
   roster: [],
   photos: {},
+  darts: {},
   match: null,
   lastReport: null,
   stats: {},
@@ -97,9 +98,11 @@ export function statsFor(name) {
 /** Fold a finished leg into each player's lifetime stats. */
 export function recordLeg(leg, roster) {
   const nameOf = (pid) => roster.find((p) => p.id === pid)?.name ?? '?';
-  for (const p of leg.players) {
-    const s = statsFor(nameOf(p.pid));
-    const turns = leg.turns.filter((t) => t.pid === p.pid);
+  // In team play a turn belongs to the member who threw it; otherwise to the player.
+  const throwers = [...new Set(leg.turns.map((t) => t.thrower ?? t.pid))];
+  for (const who of throwers) {
+    const s = statsFor(nameOf(who));
+    const turns = leg.turns.filter((t) => (t.thrower ?? t.pid) === who);
     let legPts = 0;
     let legDarts = 0;
     for (const t of turns) {
@@ -147,8 +150,15 @@ function countDoubles(s, turn) {
   let left = turn.startScore;
   for (const d of turn.darts) {
     if (left === 50 || (left >= 2 && left <= 40 && left % 2 === 0)) {
+      const target = left === 50 ? 'BULL' : `D${left / 2}`;
+      s.dblTargets ??= {};
+      const rec = (s.dblTargets[target] ??= { a: 0, h: 0 });
+      rec.a += 1;
       s.dblAttempts = (s.dblAttempts ?? 0) + 1;
-      if (d.mult === 2 && d.points === left) s.dblHits = (s.dblHits ?? 0) + 1;
+      if (d.mult === 2 && d.points === left) {
+        s.dblHits = (s.dblHits ?? 0) + 1;
+        rec.h += 1;
+      }
     }
     left -= d.points;
     if (left <= 1) break;
@@ -171,11 +181,15 @@ export function recordMatch(match, winners, bracket = null) {
   const names = match.roster.map((p) => p.name);
   const nameOf = (pid) => match.roster.find((p) => p.id === pid)?.name;
   names.forEach((n) => (statsFor(n).games += 1));
-  winners.forEach((pid) => {
+  // a team win counts for every member of the team
+  const winnerIds = winners.flatMap((pid) => match.teams?.find((t) => t.id === pid)?.members ?? [pid]);
+  winnerIds.forEach((pid) => {
     const n = nameOf(pid);
     if (n) statsFor(n).wins += 1;
   });
-  if (bracket) {
+  if (match.teams) {
+    /* head-to-head records are for one-on-one games */
+  } else if (bracket) {
     bracket.rounds.flat().forEach((m) => {
       if (m.a != null && m.b != null && m.winner != null) headToHead(nameOf(m.winner), nameOf(m.winner === m.a ? m.b : m.a));
     });
@@ -187,7 +201,8 @@ export function recordMatch(match, winners, bracket = null) {
     mode: match.config.mode,
     format: match.config.format,
     players: names,
-    winners: winners.map((pid) => match.roster.find((p) => p.id === pid)?.name).filter(Boolean),
+    winners: winnerIds.map((pid) => match.roster.find((p) => p.id === pid)?.name).filter(Boolean),
+    teams: match.teams ? match.teams.map((t) => t.members.map((pid) => nameOf(pid))) : undefined,
     legs: match.history.length,
   });
   data.history = data.history.slice(0, 60);
@@ -214,7 +229,7 @@ export function exportBackup() {
       app: 'BULLSEYE',
       version: 1,
       exportedAt: new Date().toISOString(),
-      data: { prefs: d.prefs, config: d.config, roster: d.roster, photos: d.photos, stats: d.stats, history: d.history },
+      data: { prefs: d.prefs, config: d.config, roster: d.roster, photos: d.photos, darts: d.darts, stats: d.stats, history: d.history },
     },
     null,
     1,
@@ -249,6 +264,8 @@ export function readBackup(text) {
     for (const [bk, bv] of Object.entries(v.beds ?? {})) if (/^(MISS|BULL|25|[SDT]\d{1,2})$/.test(bk)) clean.beds[bk] = num(bv);
     clean.points = (Array.isArray(v.points) ? v.points : []).filter((pt) => Array.isArray(pt) && pt.length === 2 && pt.every(Number.isFinite)).slice(-1500);
     clean.legAverages = (Array.isArray(v.legAverages) ? v.legAverages : []).filter(Number.isFinite).slice(-60);
+    clean.dblTargets = {};
+    for (const [dk, dv] of Object.entries(v.dblTargets ?? {})) if (/^(D([1-9]|1\d|20)|BULL)$/.test(dk)) clean.dblTargets[dk] = { a: num(dv?.a), h: num(dv?.h) };
     clean.h2h = {};
     for (const [opp, rec] of Object.entries(v.h2h ?? {})) clean.h2h[str(opp, 24)] = { w: num(rec?.w), l: num(rec?.l) };
     stats[str(k, 24).toLowerCase()] = clean;
@@ -260,18 +277,31 @@ export function readBackup(text) {
     players: (Array.isArray(h?.players) ? h.players : []).map((n) => str(n, 24)).slice(0, 8),
     winners: (Array.isArray(h?.winners) ? h.winners : []).map((n) => str(n, 24)).slice(0, 8),
     legs: num(h?.legs),
+    ...(Array.isArray(h?.teams) ? { teams: h.teams.slice(0, 4).map((tm) => (Array.isArray(tm) ? tm : []).map((n) => str(n, 24)).slice(0, 2)) } : {}),
   }));
   const base = defaults();
   const prefs = { ...base.prefs };
   for (const k of Object.keys(base.prefs)) if (typeof src.prefs?.[k] === typeof base.prefs[k] || (k === 'lang' && ['he', 'en'].includes(src.prefs?.lang))) prefs[k] = src.prefs[k];
-  if (!THEMES.includes(prefs.theme)) prefs.theme = base.prefs.theme;
+  if (!THEMES.includes(prefs.theme) && prefs.theme !== 'custom') prefs.theme = base.prefs.theme;
   const config = { ...base.config };
   if (MODES.includes(src.config?.mode)) config.mode = src.config.mode;
   if (['single', 'legs', 'tournament'].includes(src.config?.format)) config.format = src.config.format;
   config.doubleOut = typeof src.config?.doubleOut === 'boolean' ? src.config.doubleOut : config.doubleOut;
   config.legs = Math.min(11, Math.max(1, num(src.config?.legs) || 1));
   config.sets = Math.min(7, Math.max(1, num(src.config?.sets) || 1));
-  const out = { prefs, config, roster, photos, stats, history };
+  config.teams = src.config?.teams === true;
+  const darts = {};
+  for (const [k, v] of Object.entries(src.darts ?? {})) {
+    if (!v || typeof v !== 'object') continue;
+    darts[photoKey(str(k, 24))] = {
+      flight: ['classic', 'solid', 'stripes', 'checker', 'star', 'flame'].includes(v.flight) ? v.flight : 'classic',
+      barrel: ['silver', 'black', 'gold'].includes(v.barrel) ? v.barrel : 'silver',
+      color: /^#[0-9a-f]{6}$/i.test(v.color) ? v.color : '',
+    };
+  }
+  prefs.customTheme = cleanTheme(src.prefs?.customTheme);
+  if (prefs.theme === 'custom' && !prefs.customTheme) prefs.theme = 'championship';
+  const out = { prefs, config, roster, photos, darts, stats, history };
   migratePhotos(out);
   return { exportedAt: str(o.exportedAt, 40), data: out };
 }
@@ -280,4 +310,54 @@ export function readBackup(text) {
 export function restoreBackup(backup) {
   cache = { ...defaults(), ...backup.data, match: null };
   flush();
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+const WALLS = ['panels', 'grid', 'brick', 'plaster', 'carbon', 'dots'];
+
+/** A custom arena, cleaned: every colour a hex value, the wall a known style. */
+export function cleanTheme(t) {
+  if (!t || typeof t !== 'object') return null;
+  const c = (v, d) => (HEX.test(v) ? v : d);
+  return {
+    name: safeText(t.name, 24).trim() || 'Custom',
+    mode: t.mode === 'light' ? 'light' : 'dark',
+    accent: c(t.accent, '#f5c46b'),
+    dark: c(t.dark, '#17181b'),
+    light: c(t.light, '#efe1c0'),
+    red: c(t.red, '#c8253c'),
+    green: c(t.green, '#11734f'),
+    wall: WALLS.includes(t.wall) ? t.wall : 'panels',
+    lightColor: c(t.lightColor, '#fff0d8'),
+  };
+}
+
+/**
+ * The record between two players in one-on-one games, newest first:
+ * wins each, the last five results (true = a won) and the current streak.
+ */
+export function rivalry(a, b, history = load().history) {
+  const ka = photoKey(a);
+  const kb = photoKey(b);
+  const games = history.filter((h) => !h.teams && h.players?.length === 2 && h.players.some((n) => photoKey(n) === ka) && h.players.some((n) => photoKey(n) === kb) && h.winners?.length === 1);
+  const aWon = games.map((h) => photoKey(h.winners[0]) === ka);
+  const wa = aWon.filter(Boolean).length;
+  let streak = 0;
+  while (streak < aWon.length && aWon[streak] === aWon[0]) streak++;
+  return { played: games.length, a: wa, b: games.length - wa, last: aWon.slice(0, 5), streak, streakA: aWon[0] ?? null };
+}
+
+/**
+ * Per-double hit rates for the Doubles panel: rows sorted best first, plus the
+ * best and weakest double among those tried at least `min` times.
+ */
+export function doublesReport(s, min = 3) {
+  const rows = Object.entries(s?.dblTargets ?? {})
+    .filter(([, v]) => v.a > 0)
+    .map(([d, v]) => ({ d, a: v.a, h: v.h, pct: Math.round((v.h / v.a) * 100), value: d === 'BULL' ? 50 : Number(d.slice(1)) * 2 }))
+    .sort((x, y) => y.pct - x.pct || y.a - x.a);
+  const solid = rows.filter((r) => r.a >= min);
+  const best = solid[0] ?? null;
+  const weak = solid.length > 1 ? solid.at(-1) : null;
+  return { rows, best, weak: weak && weak.d !== best?.d && weak.pct < best.pct ? weak : null };
 }

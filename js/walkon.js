@@ -10,7 +10,7 @@ const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&
  * text: { introducing, vs, gameOn, skip, debut }
  * hooks: { onPlayer(p), onVs(a, b), onGameOn() } for voice and sound
  */
-export function playWalkOn({ players, text, hooks = {} }) {
+export function playWalkOn({ players, text, rival = null, hooks = {} }) {
   return new Promise((resolve) => {
     const root = document.createElement('div');
     root.className = 'walkon';
@@ -51,7 +51,7 @@ export function playWalkOn({ players, text, hooks = {} }) {
       <div class="wo-card" style="--pc:${p.color}">
         <div class="wo-photo"><span>${p.face}</span><i class="wo-ring"></i></div>
         <div class="wo-copy">
-          <small>${esc(text.introducing)}</small>
+          <small>${esc(p.team ? text.introTeam ?? text.introducing : text.introducing)}</small>
           <h2>${esc(p.name)}</h2>
           <div class="wo-chips">${
             p.chips?.length
@@ -80,10 +80,11 @@ export function playWalkOn({ players, text, hooks = {} }) {
             <div class="wo-side l" style="--pc:${a.color}"><div class="wo-photo sm"><span>${a.face}</span><i class="wo-ring"></i></div><h3>${esc(a.name)}</h3></div>
             <strong class="wo-vs-mark">${esc(text.vs)}</strong>
             <div class="wo-side r" style="--pc:${b.color}"><div class="wo-photo sm"><span>${b.face}</span><i class="wo-ring"></i></div><h3>${esc(b.name)}</h3></div>
+            ${rival ? rivalHTML(rival, a, b, text) : ''}
           </div>`;
         hooks.onVs?.(a, b);
       });
-      t += 2100;
+      t += rival?.played ? 3300 : 2100;
     }
     at(t, () => {
       stage.innerHTML = `<strong class="wo-gameon">${esc(text.gameOn)}</strong>`;
@@ -91,4 +92,15 @@ export function playWalkOn({ players, text, hooks = {} }) {
     });
     at(t + 1150, finish);
   });
+}
+
+/** Head-to-head strip under the face-off: record, last five, streak. */
+function rivalHTML(r, a, b, text) {
+  if (!r.played) return `<div class="wo-rival first"><b>${esc(r.headline)}</b></div>`;
+  return `<div class="wo-rival">
+    <div class="wo-rec"><span style="--pc:${a.color}">${r.a}</span><i>–</i><span style="--pc:${b.color}">${r.b}</span></div>
+    <b>${esc(r.headline)}</b>
+    <div class="wo-last"><em>${esc(text.last5)}</em>${r.last.map((w) => `<i style="--pc:${w ? a.color : b.color}" title="${esc(w ? a.name : b.name)}"></i>`).join('')}</div>
+    ${r.streak ? `<small>${esc(r.streak)}</small>` : ''}
+  </div>`;
 }

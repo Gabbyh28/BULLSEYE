@@ -54,3 +54,10 @@ export function callIntro(name, lang) {
 export function callVersus(a, b, lang) {
   say(isHe(lang) ? `${a} נגד ${b}` : `${a}, versus ${b}`, { interrupt: true, rate: 0.95 });
 }
+
+/** The face-off record: "Gabby leads 7 to 4" / all square. */
+export function callRivalry({ lead, w, l, lang }) {
+  const he = isHe(lang);
+  if (!lead) say(he ? `שוויון, ${w} מול ${l}` : `All square, ${w} games each`, { rate: 0.95 });
+  else say(he ? `${lead} ביתרון, ${w} מול ${l}` : `${lead} leads, ${w} to ${l}`, { rate: 0.95 });
+}
