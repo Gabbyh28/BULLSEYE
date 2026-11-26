@@ -2060,3 +2060,12 @@ html.in-game.tv .view-game { height: 100dvh; }
 .cabinet li small { font-size: .7rem; line-height: 1.3; color: var(--muted); }
 .cabinet li:not(.got) b { color: var(--muted); }
 @media (max-width: 699px) { .cabinet ul { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); } .cabinet li small { display: none; } }
+
+/* ═══════════ player intro videos ═══════════ */
+.clip-stage { position: fixed; inset: 0; z-index: 71; background: #000; --pc: var(--accent); animation: fade .3s ease both; }
+.clip-stage.out { animation: fade .35s ease reverse both; }
+.clip-stage video { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; }
+@media (max-aspect-ratio: 1/1) { .clip-stage video { object-fit: contain; } }
+.clip-stage .cine-lower { z-index: 2; }
+.clip-badge { position: absolute; top: -4px; inset-inline-start: -4px; display: grid; place-items: center; width: 16px; height: 16px; border-radius: 50%; background: var(--accent); color: var(--on-accent); box-shadow: 0 0 0 2px var(--bg-2); }
+.clip-badge .ico { width: 10px; height: 10px; }

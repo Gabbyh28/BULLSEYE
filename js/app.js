@@ -12,6 +12,7 @@ import { playWalkOn } from './walkon.js';
 import { FLIGHTS, BARRELS, drawFlight, drawDartPreview } from './dartstyle.js';
 import { PRESETS, WALLS, installTheme, expandTheme } from './themes.js';
 import { BADGES, badgeById, earnedBadges } from './achievements.js';
+import { initClips, hasClip, hasOwnClip, clipUrl, saveClip, removeClip, playClip } from './clips.js';
 import { hostRoom, joinRoom, qrSvg, remoteUrl, remoteCodeFromHash } from './remote.js';
 
 const data = load();
@@ -70,6 +71,7 @@ function boot() {
   }
   applyPrefs();
   renderTopbar();
+  initClips().then(() => state.view === 'lobby' && $('#roster') && renderRoster());
   let restored = false;
   try {
     restored = sessionStorage.getItem('bullseye:restored') === '1';
@@ -186,6 +188,7 @@ function icon(name) {
     board: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>',
     dart: '<path d="M3 21l7-7"/><path d="M10 14l3.5-3.5"/><path d="M13.5 10.5 16 5l3 3-5.5 2.5"/><path d="M16 5l3-2 2 2-2 3"/>',
     palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4-4-7.4-9-7.4Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/>',
+    film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
     pad: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   }[name];
   return `<svg class="ico ico-${name}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${p}</svg>`;
@@ -400,7 +403,7 @@ function renderRoster() {
       (p, i) => `
     <li class="player-row" data-idx="${i}" style="--pc:${p.color}">
       <span class="grip" data-grip title="${t('moveUp')} / ${t('moveDown')}">${icon('grip')}</span>
-      <button class="avatar sm ${photoOf(p.name) ? 'has-photo' : ''}" data-avatar="${i}" aria-label="${t('photoMenu')}" aria-haspopup="menu">${face(p)}<i class="cam-badge" aria-hidden="true">${icon('camera')}</i></button>
+      <button class="avatar sm ${photoOf(p.name) ? 'has-photo' : ''}" data-avatar="${i}" aria-label="${t('photoMenu')}" aria-haspopup="menu">${face(p)}<i class="cam-badge" aria-hidden="true">${icon('camera')}</i>${hasClip(p.name) ? `<i class="clip-badge" title="${t('clipHas')}">${icon('film')}</i>` : ''}</button>
       ${teamsOn() ? `<span class="team-tag t${Math.floor(i / 2)}" title="${t('teamN', { n: 'ABC'[Math.floor(i / 2)] })}">${'ABC'[Math.floor(i / 2)]}</span>` : ''}
       <input class="name" maxlength="24" value="${esc(p.name)}" data-name="${i}" aria-label="${t('playerN', { n: i + 1 })}">
       <button class="color-dot" data-color-cycle="${i}" style="--c:${p.color}" aria-label="colour"></button>
@@ -670,7 +673,11 @@ function openPhotoMenu(anchor, idx) {
     <button role="menuitem" data-pm="upload" ${p.name.trim() ? '' : 'disabled'}>${icon('camera')} ${has ? t('photoChange') : t('photoAdd')}</button>
     ${has ? `<button role="menuitem" data-pm="remove">${icon('x')} ${t('photoRemove')}</button>` : `<button role="menuitem" data-pm="emoji"><span class="pm-emoji">${AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length]}</span> ${t('nextEmoji')}</button>`}
     <button role="menuitem" data-pm="darts" ${p.name.trim() ? '' : 'disabled'}>${icon('dart')} ${t('customiseDarts')}</button>
-    <input type="file" accept="image/*" hidden>`;
+    <button role="menuitem" data-pm="clip" ${p.name.trim() ? '' : 'disabled'}>${icon('film')} ${hasClip(p.name) ? t('clipChange') : t('clipAdd')}</button>
+    ${hasClip(p.name) ? `<button role="menuitem" data-pm="clip-play">${icon('next')} ${t('clipPlay')}</button>` : ''}
+    ${hasOwnClip(p.name) ? `<button role="menuitem" data-pm="clip-remove">${icon('x')} ${t('clipRemove')}</button>` : ''}
+    <input type="file" accept="image/*" hidden>
+    <input type="file" accept="video/*" hidden data-clip-input>`;
   document.body.appendChild(menu);
   const r = anchor.getBoundingClientRect();
   const mw = menu.offsetWidth;
@@ -678,6 +685,19 @@ function openPhotoMenu(anchor, idx) {
   menu.style.left = `${left}px`;
   menu.style.top = `${Math.min(innerHeight - menu.offsetHeight - 8, r.bottom + 6)}px`;
   const input = menu.querySelector('input');
+  const clipInput = menu.querySelector('[data-clip-input]');
+  clipInput.addEventListener('change', async () => {
+    const file = clipInput.files?.[0];
+    if (!file) return;
+    try {
+      await saveClip(p.name, file);
+      refresh();
+    } catch (e) {
+      closePhotoMenu();
+      const err = $('#lobby-error');
+      if (err) err.textContent = e.message === 'size' ? t('clipTooBig') : t('clipError');
+    }
+  });
   const refresh = () => {
     closePhotoMenu();
     renderRoster();
@@ -692,6 +712,13 @@ function openPhotoMenu(anchor, idx) {
     } else if (a === 'darts') {
       closePhotoMenu();
       openDartCustomiser(p);
+    } else if (a === 'clip') {
+      clipInput.click();
+    } else if (a === 'clip-play') {
+      closePhotoMenu();
+      clipUrl(p.name).then((u) => u && playClip(u, { name: p.name.trim(), color: p.color, title: t('winningDart'), skip: t('close'), avatar: face(p) }));
+    } else if (a === 'clip-remove') {
+      removeClip(p.name).then(refresh);
     } else if (a === 'emoji') {
       p.avatar = AVATARS[(AVATARS.indexOf(p.avatar) + 1) % AVATARS.length];
       refresh();
@@ -975,13 +1002,16 @@ function onDart(dart) {
   save();
 
   // The winning dart gets the full cinematic on the 3D board.
-  if (next.winners && state.board?.playWinningThrow && prefs.motion !== 'off') {
+  // A player with an intro video gets it first: their real throw, then the 3D flight.
+  const thrower = pinfo(currentThrower(before));
+  if (next.winners && prefs.motion !== 'off' && (state.board?.playWinningThrow || hasClip(thrower.name))) {
     state.cinematic = true;
     updateGame({ popDart: next.turn.length - 1 });
-    const pi = pinfo(currentThrower(before));
+    const pi = thrower;
     sfx.whoosh();
-    state.board
+    winningSequence(pi, color, () => state.board
       .playWinningThrow(dart, {
+        fromClip: state.clipPlayed,
         color,
         style,
         title: t('winningDart'),
@@ -994,8 +1024,13 @@ function onDart(dart) {
           haptic(40);
           celebrate(events, next, player);
         },
-      })
-      .then(() => {
+      }),
+      () => {
+        // 2D board: the clip, then the dart lands and the celebration starts
+        state.board.addDart(dart, { color, index: next.turn.length - 1, style });
+        hitSound();
+        celebrate(events, next, player);
+      }).then(() => {
         state.cinematic = false;
         setTimeout(showResult, 1400);
       });
@@ -1007,6 +1042,29 @@ function onDart(dart) {
   haptic(dart.mult >= 2 ? 20 : 10);
   updateGame({ popDart: next.turn.length - 1 });
   handleEvents(events, before, next, player);
+}
+
+/** The winning-dart sequence: the player's intro video if they have one, then the 3D throw (or the 2D fallback). */
+async function winningSequence(pi, color, throw3d, land2d) {
+  state.clipPlayed = false;
+  try {
+    const url = hasClip(pi.name) ? await clipUrl(pi.name) : null;
+    if (url) {
+      await playClip(url, {
+        name: pi.name,
+        color,
+        title: t('winningDart'),
+        skip: t('skip'),
+        avatar: face(pi),
+        onStart: () => setTimeout(() => sfx.crowd(0.7), 1500),
+      });
+      state.clipPlayed = true;
+    }
+  } catch (e) {
+    console.warn('intro clip', e);
+  }
+  if (state.board?.playWinningThrow) await throw3d();
+  else land2d();
 }
 
 /** Fireworks, confetti, fanfare and a banner naming the winner. */

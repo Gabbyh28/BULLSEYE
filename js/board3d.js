@@ -1292,7 +1292,7 @@ export class Board3D {
     return this.runWinningThrow(dart, { ...opts, hand });
   }
 
-  runWinningThrow(dart, { color = '#f5c46b', style, title, name, skip, avatar, detail, onImpact, hand = null } = {}) {
+  runWinningThrow(dart, { color = '#f5c46b', style, title, name, skip, avatar, detail, onImpact, hand = null, fromClip = false } = {}) {
     return new Promise((resolve) => {
       if (dart.x == null) {
         onImpact?.();
@@ -1309,7 +1309,8 @@ export class Board3D {
       const side = hand ? -1 : 1; // film the thumb side of the real hand
       const HW = new THREE.Vector3(1.3, -0.1, 13.4); // hand at the moment of release
       arm.root.position.copy(HW).add(new THREE.Vector3(0, -2.4, 0));
-      this.scene.add(arm.root);
+      // after a real intro video the throw has been seen: start at the flight, no 3D thrower
+      if (!fromClip) this.scene.add(arm.root);
       const model = buildDart(color, style);
       model.position.y = -0.55;
       arm.slot.add(model);
@@ -1317,7 +1318,7 @@ export class Board3D {
       // The thrower: a body in the player's colours, wearing their face.
       const body = buildThrower({ elbow: arm.root.position.clone(), color, name, avatar, skinMat: hand?.mesh?.material ?? null });
       (hand ? arm.mats[0] : arm.mats[1])?.color?.copy(new THREE.Color(color).multiplyScalar(0.8)); // forearm sleeve matches the jersey
-      this.scene.add(body.group);
+      if (!fromClip) this.scene.add(body.group);
       const faceLight = new THREE.SpotLight('#fff4e6', 2.2, 0, 0.42, 0.7, 0);
       faceLight.position.copy(body.headCenter).add(new THREE.Vector3(-3.5, 2.5, -7));
       faceLight.target.position.copy(body.headCenter);
@@ -1363,8 +1364,12 @@ export class Board3D {
       const FLIGHT = 3000;
       const HOLD = 1500;
       const RETURN = 1300;
-      const t0 = performance.now();
-      let last = t0;
+      const t0 = performance.now() - (fromClip ? INTRO + RELEASE : 0);
+      let last = performance.now();
+      if (fromClip) {
+        cine.pos.copy(HW).add(new THREE.Vector3(side * 2.6, 0.75, 1.6));
+        cine.look.copy(HW).lerp(T, 0.3);
+      }
       let holder = null;
       let R = null;
       let impactAt = 0;
