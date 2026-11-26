@@ -9,6 +9,7 @@ import { SECTORS, R, scoreAt } from './engine.js';
 import { BOARD_SKINS } from './board.js';
 import { loadHand, poseHand, GRIP } from './hand.js';
 import { FLIGHTS, BARRELS, drawFlight } from './dartstyle.js';
+import { buildThrower } from './thrower.js';
 
 const U = 0.01; // world units per millimetre
 const BOARD_R = 2.26; // sisal face radius (226mm)
@@ -831,7 +832,8 @@ export class Board3D {
   loop() {
     if (this.dead) return;
     this.raf = requestAnimationFrame(this.loop);
-    if (!this.visible || document.hidden) return;
+    // a cinematic plays full screen even when the board itself is hidden (phone keypad mode)
+    if ((!this.visible && !this.cine && !this.stage) || document.hidden) return;
     const raw = this.clock.getDelta();
     const dt = Math.min(0.05, raw);
     const t = this.clock.elapsedTime;
@@ -1096,10 +1098,10 @@ export class Board3D {
     const sc = this.sc ?? SCENES.championship;
     const floor = new THREE.Mesh(new THREE.PlaneGeometry(40, 40), new THREE.MeshStandardMaterial({ color: sc.b, roughness: 0.45, metalness: 0.35 }));
     floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, -5.2, 10);
-    const side = new THREE.Mesh(new THREE.PlaneGeometry(40, 14), this.wallMat);
+    floor.position.set(0, -16, 10);
+    const side = new THREE.Mesh(new THREE.PlaneGeometry(40, 32), this.wallMat);
     side.rotation.y = Math.PI / 2;
-    side.position.set(7, 1, 10);
+    side.position.set(7, -1, 10);
     side.rotation.y = -Math.PI / 2;
     const light = new THREE.SpotLight(sc.key, 2.6, 0, 0.6, 0.8, 0);
     light.position.set(-6, 6, 17);
@@ -1312,6 +1314,18 @@ export class Board3D {
       model.position.y = -0.55;
       arm.slot.add(model);
 
+      // The thrower: a body in the player's colours, wearing their face.
+      const body = buildThrower({ elbow: arm.root.position.clone(), color, name, avatar, skinMat: hand?.mesh?.material ?? null });
+      (hand ? arm.mats[0] : arm.mats[1])?.color?.copy(new THREE.Color(color).multiplyScalar(0.8)); // forearm sleeve matches the jersey
+      this.scene.add(body.group);
+      const faceLight = new THREE.SpotLight('#fff4e6', 2.2, 0, 0.42, 0.7, 0);
+      faceLight.position.copy(body.headCenter).add(new THREE.Vector3(-3.5, 2.5, -7));
+      faceLight.target.position.copy(body.headCenter);
+      this.scene.add(faceLight, faceLight.target);
+      const removeBody = () => {
+        this.scene.remove(body.group, faceLight, faceLight.target);
+      };
+
       // Trail of glowing points behind the flights
       const TRAIL = 48;
       const tpos = new Float32Array(TRAIL * 3);
@@ -1327,9 +1341,19 @@ export class Board3D {
       const trailColor = new THREE.Color(color);
       const history = [];
 
+      // 0. Face-on: the player sighting down the dart, before the wind-up
+      const INTRO = 2100;
+      const faceAt = body.headCenter;
+      // a head-and-shoulders shot from the board's side, the dart hand in the foreground
+      // on a tall (phone) screen the view is narrow: step back and centre on the face
+      const tall = this.camera.aspect < 1;
+      const far = tall ? 1.55 : 1;
+      const introFrom = faceAt.clone().add(new THREE.Vector3(-4.2, 0.9, -10.5).multiplyScalar(far));
+      const introTo = faceAt.clone().add(new THREE.Vector3(-2.7, 0.5, -7.6).multiplyScalar(far));
+      const introLook = faceAt.clone().add(tall ? new THREE.Vector3(-0.35, -1.3, -0.6) : new THREE.Vector3(0.25, -1.0, -1.2));
       const cine = {
-        pos: HW.clone().add(new THREE.Vector3(4.8 * side, 0.1, 0.5)),
-        look: HW.clone().add(new THREE.Vector3(0, -0.4, -0.5)),
+        pos: introFrom.clone(),
+        look: introLook.clone(),
         skip: false,
       };
       this.cine = cine;
@@ -1384,6 +1408,7 @@ export class Board3D {
         this.crowd?.cheer(1);
         impactAt = performance.now();
         this.scene.remove(arm.root);
+        removeBody();
         trail.visible = false;
         const sp = this.stage?.querySelector('.cine-speed');
         if (sp) sp.textContent = '1×';
@@ -1397,6 +1422,9 @@ export class Board3D {
         arm.detach?.(); // the loaded hand is reused next time
         arm.root.traverse((o) => o.isMesh && o.geometry.dispose());
         arm.mats.forEach((m) => m.dispose());
+        removeBody();
+        body.dispose();
+        faceLight.dispose();
         this.cine = null;
         this.setDisabled(false);
         this.shadowDirty = true;
@@ -1406,8 +1434,9 @@ export class Board3D {
       this.anims.push((now) => {
         const dt = Math.min(0.05, (now - last) / 1000);
         last = now;
-        const ms = now - t0;
+        const ms = now - t0 - INTRO;
         const k = 1 - Math.exp(-dt * 6.5);
+        if (!impactAt) body.update((now - t0) / 1000);
 
         if (cine.skip && !returnAt) {
           if (!holder) release();
@@ -1416,6 +1445,15 @@ export class Board3D {
           this.exitCinema();
           returnAt = now;
           from = { pos: cine.pos.clone(), look: cine.look.clone() };
+        }
+
+        // 0. Slow push-in on the face
+        if (!holder && ms < 0) {
+          const f = easeInOut(clamp((now - t0) / INTRO, 0, 1));
+          arm.pivot.rotation.x = 0.05;
+          cine.pos.lerpVectors(introFrom, introTo, f);
+          cine.look.copy(introLook).add(new THREE.Vector3(0, lerp(0, 0.35, f), lerp(0, -0.4, f)));
+          return true;
         }
 
         // 1. Wind-up and throw, seen in profile

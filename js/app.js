@@ -5,12 +5,13 @@ import {
 } from './engine.js';
 import { Board, BOARD_SKINS } from './board.js';
 import { sfx, say, confetti, callout, configureFx, haptic, unlockSpeech, voiceStatus, voiceChoices, loadClip, fireworks, winnerBanner } from './fx.js';
-import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup, photoKey, rivalry, cleanTheme, doublesReport } from './storage.js';
+import { load, save, flush, recordLeg, recordMatch, resetStats, exportBackup, readBackup, restoreBackup, photoKey, rivalry, cleanTheme, doublesReport, grantBadges } from './storage.js';
 import { t, setLang, getLang } from './i18n.js';
 import { call180, callTurnScore, callBust, callGameShot, callUpNext, callIntro, callVersus, callGameOn, callRivalry } from './caller.js';
 import { playWalkOn } from './walkon.js';
 import { FLIGHTS, BARRELS, drawFlight, drawDartPreview } from './dartstyle.js';
 import { PRESETS, WALLS, installTheme, expandTheme } from './themes.js';
+import { BADGES, badgeById, earnedBadges } from './achievements.js';
 import { hostRoom, joinRoom, qrSvg, remoteUrl, remoteCodeFromHash } from './remote.js';
 
 const data = load();
@@ -592,7 +593,7 @@ function onLobbyClick(e) {
     startMatch();
     return;
   } else if (b.dataset.lobby === 'resume') {
-    state.undo = [];
+    state.undo = restoreUndo(); // undo still works after a reload
     go('game');
     return;
   } else return;
@@ -831,7 +832,7 @@ function startMatch() {
     return;
   }
   data.roster.forEach((p) => (p.name = p.name.trim()));
-  data.match = createMatch(c, data.roster);
+  data.match = newMatch(c, data.roster);
   state.undo = [];
   save();
   sfx.whoosh();
@@ -844,6 +845,35 @@ function startMatch() {
 /* ───────────────────────── game ───────────────────────── */
 
 const match = () => data.match;
+/** A new match, stamped so a saved undo history can be matched to it after a reload. */
+const newMatch = (config, roster) => ({ ...createMatch(config, roster), started: Date.now() });
+const UNDO_KEY = 'bullseye:undo';
+/** Keep the last few undo steps in this tab's session storage (survives a reload, not a new tab). */
+function writeUndo() {
+  clearTimeout(state.undoSave);
+  state.undoSave = 0;
+  try {
+    sessionStorage.setItem(UNDO_KEY, JSON.stringify({ started: match()?.started ?? 0, stack: state.undo.slice(-20) }));
+  } catch {
+    /* storage full or blocked: undo still works until the page reloads */
+  }
+}
+function persistUndo() {
+  clearTimeout(state.undoSave);
+  state.undoSave = setTimeout(writeUndo, 250);
+}
+// write straight away when the page is going away (reload, tab switch, phone locking)
+addEventListener('pagehide', () => state.undoSave && writeUndo());
+document.addEventListener('visibilitychange', () => document.hidden && state.undoSave && writeUndo());
+function restoreUndo() {
+  try {
+    const u = JSON.parse(sessionStorage.getItem(UNDO_KEY) ?? 'null');
+    if (u?.started && u.started === match()?.started && Array.isArray(u.stack)) return u.stack;
+  } catch {
+    /* ignore */
+  }
+  return [];
+}
 const leg = () => data.match?.leg;
 const pinfo = (pid) => {
   const m = match();
@@ -1067,11 +1097,11 @@ function advance(silent = false) {
   state.board.clearDarts(!silent);
   save();
   updateGame();
+  sfx.turn();
   if (!silent) {
     const p = throwerInfo();
     const unit = pinfo(activePlayer(leg()).pid);
     toast(`<span class="toast-av" style="--pc:${p.color}">${face(p)}</span><span><small>${unit.team ? esc(unit.name) : t('upNext')}</small><b>${esc(p.name)}</b></span>`);
-    sfx.whoosh();
   }
   announceTurn();
 }
@@ -1131,6 +1161,7 @@ function updateGame(opts = {}) {
   renderKeypad();
   renderScores();
   renderFeed();
+  persistUndo();
   state.room?.broadcast(remoteState());
 }
 
@@ -1469,8 +1500,8 @@ function remoteState() {
     v: 1,
     mode: modeTitle(L.mode),
     round: L.round,
-    name: pi.name,
-    avatar: pi.avatar,
+    name: pi.team ? throwerInfo(L).name : pi.name, // in teams, whoever holds the darts
+    avatar: pi.team ? throwerInfo(L).avatar : pi.avatar,
     color: pi.color,
     main: String(mainNumber(L, p)),
     turn: L.turn.map((d) => d.label),
@@ -1886,7 +1917,7 @@ function renderReport(main) {
     } else if (b.dataset.rp === 'stats') go('stats');
     else if (b.dataset.rp === 'new') go('lobby');
     else if (b.dataset.rp === 'rematch') {
-      data.match = createMatch(rep.config, rep.roster);
+      data.match = newMatch(rep.config, rep.roster.filter((p) => !p.team)); // team entries are not players
       state.undo = [];
       save();
       go('game');
@@ -1989,7 +2020,14 @@ function showResult() {
   const m = match();
   if (!m || !leg().winners || $('.modal.open')) return;
   const { match: next, outcome } = commitLeg(m);
-  state.pending = { next, outcome };
+  // badges are only worked out here and saved when the result is accepted, so undo takes them back
+  let badges = [];
+  try {
+    badges = earnedBadges({ leg: leg(), match: m, outcome, next, stats: data.stats, history: data.history, have: data.badges ?? {} });
+  } catch (e) {
+    console.warn('badges', e);
+  }
+  state.pending = { next, outcome, badges };
   const final = outcome.type === 'match' || outcome.type === 'tournament';
   const winners = outcome.winners.map(pinfo);
   const L = leg();
@@ -2029,6 +2067,7 @@ function showResult() {
         <thead><tr><th></th><th>${isX01(L.mode) ? t('avg') : t('points')}</th><th>${t('darts')}</th><th>${t('bestTurn')}</th>${m.config.format !== 'single' ? `<th>${t('legs')}</th>` : ''}</tr></thead>
         <tbody>${rows}</tbody>
       </table>
+      ${badges.length ? badgesUnlocked(badges, m) : ''}
       ${m.config.format === 'tournament' ? `<div class="bracket-wrap">${bracketHTML(next.bracket ?? m.bracket, m.roster)}</div>` : ''}
       <div class="result-actions">
         <button class="btn ghost" data-r="undo">${icon('undo')} ${t('undoLast')}</button>
@@ -2040,12 +2079,56 @@ function showResult() {
   if (final && !state.celebrated) {
     confetti(160);
   }
+  if (badges.length) setTimeout(() => $('.badges-new') && sfx.unlock(), 650);
+}
+
+/** A badge as a medal: tier colours, the icon, dimmed when still locked. */
+function medal(b, earned = true, size = '') {
+  return `<span class="medal tier-${b.tier} ${earned ? '' : 'locked'} ${size}" aria-hidden="true"><i>${earned ? b.icon : '?'}</i></span>`;
+}
+
+/** The result screen's "Badges unlocked" strip. */
+function badgesUnlocked(list, m) {
+  const rank = { legend: 0, gold: 1, silver: 2, bronze: 3 };
+  const shown = [...list].sort((x, y) => rank[badgeById(x.id).tier] - rank[badgeById(y.id).tier]).slice(0, 8);
+  const more = list.length - shown.length;
+  const many = new Set(list.map((b) => b.name)).size > 1 || m.roster.length > 1;
+  return `<div class="badges-new">
+    <h4><span>✦</span> ${t('badgesNew')}</h4>
+    <ul>${shown
+      .map((x, i) => {
+        const b = badgeById(x.id);
+        const p = m.roster.find((r) => r.name === x.name);
+        return `<li style="--i:${i}">${medal(b)}<div><b>${t('ach_' + b.id)}</b><small>${many ? `${esc(x.name)} · ` : ''}${t('ach_' + b.id + '_d')}</small></div>${many && p ? `<span class="avatar xs" style="--pc:${p.color}">${face(p)}</span>` : ''}</li>`;
+      })
+      .join('')}</ul>
+    ${more > 0 ? `<p class="muted">+${more}</p>` : ''}
+  </div>`;
+}
+
+/** Stats: every badge, earned ones in colour with the date, locked ones as a goal. */
+function trophyCabinet(s) {
+  const own = data.badges?.[photoKey(s.name)] ?? {};
+  const n = BADGES.filter((b) => own[b.id]).length;
+  const fmt = (at) => new Date(at).toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'short', year: 'numeric' });
+  const order = [...BADGES].sort((a, b) => (own[b.id] ? 1 : 0) - (own[a.id] ? 1 : 0));
+  return `<div class="cabinet panel reveal" style="--d:.2s">
+    <header><h4>${t('trophyCabinet')}</h4><span class="cab-count" dir="ltr"><b>${n}</b> / ${BADGES.length}</span>
+      <span class="cab-bar" role="img" aria-label="${t('badgesCount', { n, m: BADGES.length })}"><i style="width:${(n / BADGES.length) * 100}%"></i></span></header>
+    <ul>${order
+      .map((b) => {
+        const at = own[b.id];
+        return `<li class="${at ? 'got' : ''}" title="${at ? t('badgeEarned', { date: fmt(at) }) : t('badgeLocked')} · ${t('tier_' + b.tier)}">${medal(b, !!at)}<b>${t('ach_' + b.id)}</b><small>${t('ach_' + b.id + '_d')}</small></li>`;
+      })
+      .join('')}</ul>
+  </div>`;
 }
 
 function commitPending() {
   const p = state.pending;
   if (!p) return null;
   const old = match();
+  if (p.badges?.length) grantBadges(p.badges);
   recordLeg(old.leg, old.roster);
   if (p.outcome.type === 'match' || p.outcome.type === 'tournament') {
     recordMatch(old, p.outcome.winners, p.outcome.type === 'tournament' ? p.next.bracket : null);
@@ -2070,12 +2153,15 @@ function onResultClick(e) {
   if (a === 'continue') {
     state.board.clearDarts();
     updateGame();
-    const p = pinfo(activePlayer(leg()).pid);
-    toast(`<span class="toast-av" style="--pc:${p.color}">${face(p)}</span><span><small>${t('upNext')}</small><b>${esc(p.name)}</b></span>`);
+    sfx.turn();
+    const p = throwerInfo();
+    const unit = pinfo(activePlayer(leg()).pid);
+    toast(`<span class="toast-av" style="--pc:${p.color}">${face(p)}</span><span><small>${unit.team ? esc(unit.name) : t('upNext')}</small><b>${esc(p.name)}</b></span>`);
     announceTurn();
   } else if (a === 'rematch') {
     const rm = data.match;
-    data.match = createMatch(rm.config, rm.roster);
+    data.match = newMatch(rm.config, rm.roster);
+    state.undo = [];
     save();
     go('game');
   } else if (a === 'new') {
@@ -2301,6 +2387,7 @@ function renderStats(main) {
         </div>
       </div>
       ${doublesPanel(s)}
+      ${trophyCabinet(s)}
       ${data.history.length ? `<div class="history panel reveal" style="--d:.2s"><h4>${t('history')}</h4><ul>${data.history.slice(0, 15).map((h) => `
         <li><span class="glyph" dir="ltr">${esc(MODE_GLYPH[h.mode] ?? h.mode)}</span><span>${h.players.map((n) => (h.winners.includes(n) ? `<b>🏆 ${esc(n)}</b>` : esc(n))).join(' · ')}</span><time>${new Date(h.at).toLocaleDateString(getLang() === 'he' ? 'he-IL' : 'en-GB', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}</time></li>`).join('')}</ul></div>` : ''}
       `}

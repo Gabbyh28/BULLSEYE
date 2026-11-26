@@ -11,6 +11,7 @@ A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand
 - **Checkout routes** for every finish up to 170, aware of how many darts are left
 - **Undo anything:** darts, turns, even a leg-winning dart; or tap one dart of the current turn to fix just that dart (the turn is rescored)
 - **Match report:** a worm chart of every leg, a stats table, key moments and player of the match
+- **Achievements:** 27 badges from bronze to legend (180s, Big Fish, Bed & Breakfast, nine-darter, comeback, whitewash, streaks…). New ones appear on the result screen; the Stats page has a trophy cabinet per player. Undoing the winning dart takes them back
 - **Callouts:** 180, ton-plus, bust, game shot, Shanghai, Killer, plus confetti, synthesised sound effects and an optional caller voice
 - **6 arenas, plus your own:** Championship, Neon Night, Old Tavern, Daylight, Carbon Blaze and Candy Royale each restyle the room and the board. The arena builder makes a custom one (dark or light base, accent, board colours, wall, lights) with live preview and seasonal packs: Winter, Summer, Party
 - **Dart customiser:** each player picks a flight design (classic, solid, stripes, checker, star, flame), flight colour and barrel (tungsten, black, gold), saved to their name and shown on the 3D board and in the winning-dart cinematic
@@ -19,7 +20,7 @@ A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand
 - **Player photos, saved to names:** tap an avatar to add a photo (or take one on a phone). It is saved to that name on the device, so typing the name again brings the photo back; it shows on the scoreboard, results, stats and winner banner
 - **Walk-on intros:** before a match, spotlights, each player's photo and career numbers, the caller's introduction, a face-off for two players, then GAME ON (skippable; can be turned off). One-on-one face-offs show the rivalry: head-to-head record, last five results and current streak, read out by the caller
 - **Big-screen mode + phone scoring:** a broadcast layout for a TV or laptop with a QR code; phones that scan it get a scoring keypad and the live score (peer-to-peer via PeerJS)
-- **TV-night atmosphere:** 180s strobe the arena in the player's colour with an LED chase and crowd roar; a caller with personality; a crowd in the winning-dart cinematic
+- **TV-night atmosphere:** 180s strobe the arena in the player's colour with a crowd roar; a caller with personality; a soft chime on every turn change; and the winning-dart cinematic: the thrower, in their colours and wearing their photo or emoji as a face, sights down the dart before a slow-motion throw in front of the crowd
 - **Hebrew (RTL) and English**, mobile-first layout, fullscreen, autosave and resume
 
 ## Run it
@@ -49,6 +50,8 @@ npm test
 | `js/hand.js` | Rigged hand for the winning-dart cinematic, posed into a dart grip with forward kinematics and a small IK pinch |
 | `js/dartstyle.js` | Flight artwork and barrel finishes, shared by the 3D darts and the customiser preview |
 | `js/themes.js` | Custom arena: expands a few choices into board colours, a 3D scene and page colour tokens; seasonal packs |
+| `js/thrower.js` | The thrower in the winning-dart cinematic: a player in their colours wearing their photo or emoji as a face |
+| `js/achievements.js` | Badge list and the pure rules that decide which badges a finished leg or match earns |
 | `js/board.js` | 2D SVG board: fallback without WebGL, and the stats heatmap |
 | `js/app.js` | Screens (lobby, live game, results, stats) and game flow |
 | `js/caller.js` | The caller's lines (180, game shot, you require N, darts slang) in English and Hebrew |
@@ -58,6 +61,7 @@ npm test
 | `js/storage.js` | localStorage persistence and lifetime player stats |
 | `js/i18n.js` | Hebrew / English strings |
 | `tests/engine.test.mjs` | Rules-engine tests: board geometry, checkouts, every game mode, formats, undo safety, teams |
+| `tests/achievements.test.mjs` | Badge rules: turn, checkout, leg and match badges, no repeats |
 | `tests/storage.test.mjs` | Checkout %, per-double hit rates, team stats, rivalry records, head-to-head, backup round trip, and cleaning of hostile backup files |
 | `css/styles.css` | Themes, layout and motion |
 

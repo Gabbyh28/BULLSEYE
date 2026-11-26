@@ -2018,3 +2018,45 @@ html.in-game.tv .view-game { height: 100dvh; }
   .roster.teamed .grip { display: none; }
   .team-tag { width: 17px; height: 17px; font-size: .6rem; border-radius: 5px; }
 }
+
+/* ═══════════ achievements ═══════════ */
+.medal { --m0: #f0b27a; --m1: #a8632b; --m2: #5c3311; position: relative; flex: none; display: inline-grid; place-items: center; width: 46px; height: 46px; border-radius: 50%;
+  background: radial-gradient(circle at 32% 26%, var(--m0), var(--m1) 58%, var(--m2));
+  box-shadow: inset 0 0 0 3px color-mix(in srgb, var(--m0), transparent 35%), inset 0 -4px 8px rgba(0, 0, 0, .35), 0 6px 14px -6px var(--m1); }
+.medal::after { content: ''; position: absolute; inset: 5px; border-radius: 50%; border: 1px dashed color-mix(in srgb, var(--m0), transparent 40%); }
+.medal i { font-style: normal; font-size: 1.35rem; line-height: 1; filter: drop-shadow(0 2px 2px rgba(0, 0, 0, .35)); }
+.medal.tier-silver { --m0: #f4f7fa; --m1: #9aa6b2; --m2: #4b5560; }
+.medal.tier-gold { --m0: #fff1b8; --m1: #e0a93a; --m2: #7a4d0e; }
+.medal.tier-legend { --m0: #ffe9fb; --m1: #9a6bff; --m2: #2a145e; background: radial-gradient(circle at 32% 26%, #ffffff, transparent 45%), conic-gradient(from 20deg, #ff7ac8, #ffd166, #5ef2d0, #8b9dff, #ff7ac8); }
+.medal.locked { background: var(--surface-2); box-shadow: inset 0 0 0 2px var(--line-2); }
+.medal.locked::after { border-color: var(--line); }
+.medal.locked i { font-size: 1.1rem; font-weight: 800; color: var(--muted); filter: none; }
+
+.badges-new { margin: 1rem 0 .2rem; padding: .8rem .9rem; border-radius: 16px; text-align: start; background: linear-gradient(135deg, color-mix(in srgb, var(--accent), transparent 86%), transparent 70%), var(--surface); border: 1px solid color-mix(in srgb, var(--accent), transparent 65%); }
+.badges-new h4 { margin: 0 0 .6rem; font-size: .72rem; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; color: var(--accent); }
+.badges-new h4 span { display: inline-block; animation: spin-in 1.2s var(--ease) both; }
+.badges-new ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 8px; }
+.badges-new li { display: flex; align-items: center; gap: .65rem; min-width: 0; animation: badge-pop .6s calc(.5s + var(--i) * .14s) var(--spring) both; }
+.badges-new li > div { min-width: 0; flex: 1; }
+.badges-new li b { display: block; font-size: .95rem; }
+.badges-new li small { display: block; color: var(--muted); font-size: .76rem; line-height: 1.3; }
+.badges-new .medal { animation: medal-shine 1.6s calc(.7s + var(--i) * .14s) ease-out both; }
+@keyframes badge-pop { from { opacity: 0; transform: scale(.6) translateY(8px); } }
+@keyframes medal-shine { 0% { filter: brightness(2.2) saturate(.3); } 100% { filter: none; } }
+@keyframes spin-in { from { transform: rotate(-180deg) scale(.2); opacity: 0; } }
+[data-motion='off'] .badges-new li, [data-motion='off'] .badges-new .medal, [data-motion='off'] .badges-new h4 span { animation: none; }
+
+.cabinet { margin-top: 16px; padding: 1.1rem 1.2rem; }
+.cabinet header { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; margin-bottom: .9rem; }
+.cabinet h4 { margin: 0; font-size: .72rem; font-weight: 700; letter-spacing: .14em; text-transform: uppercase; color: var(--muted); }
+.cab-count { font-size: .85rem; color: var(--muted); }
+.cab-count b { color: var(--text); font-size: 1.05rem; }
+.cab-bar { flex: 1 1 120px; max-width: 260px; height: 8px; border-radius: 99px; background: var(--surface-2); overflow: hidden; }
+.cab-bar i { display: block; height: 100%; border-radius: 99px; background: linear-gradient(90deg, var(--accent), color-mix(in srgb, var(--accent), #fff 35%)); }
+.cabinet ul { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 10px; }
+.cabinet li { display: grid; justify-items: center; gap: .3rem; padding: .75rem .5rem .7rem; border-radius: 14px; text-align: center; background: var(--surface); border: 1px solid var(--line); }
+.cabinet li.got { background: linear-gradient(180deg, color-mix(in srgb, var(--accent), transparent 90%), transparent), var(--surface); border-color: var(--line-2); }
+.cabinet li b { font-size: .82rem; line-height: 1.2; }
+.cabinet li small { font-size: .7rem; line-height: 1.3; color: var(--muted); }
+.cabinet li:not(.got) b { color: var(--muted); }
+@media (max-width: 699px) { .cabinet ul { grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); } .cabinet li small { display: none; } }

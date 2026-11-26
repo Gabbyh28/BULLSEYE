@@ -105,6 +105,24 @@ export const sfx = {
     if (!c) return;
     tone(c, { f0: 900, dur: 0.04, gain: 0.05 });
   },
+  /** Badge unlocked: a bright little sparkle run. */
+  unlock() {
+    const c = audio();
+    if (!c) return;
+    [1319, 1568, 2093, 2637].forEach((f, i) => {
+      tone(c, { f0: f, dur: 0.35, gain: 0.06, attack: 0.01, t: i * 0.07 });
+      tone(c, { type: 'triangle', f0: f / 2, dur: 0.3, gain: 0.025, t: i * 0.07 });
+    });
+  },
+  /** Turn change: a soft two-note chime, quiet enough to sit under the caller. */
+  turn() {
+    const c = audio();
+    if (!c) return;
+    tone(c, { f0: 784, dur: 0.42, gain: 0.045, attack: 0.018 });
+    tone(c, { f0: 1568, dur: 0.3, gain: 0.012, attack: 0.018 });
+    tone(c, { f0: 1047, dur: 0.6, gain: 0.04, attack: 0.02, t: 0.11 });
+    tone(c, { f0: 2093, dur: 0.4, gain: 0.01, attack: 0.02, t: 0.11 });
+  },
   whoosh() {
     const c = audio();
     if (!c) return;

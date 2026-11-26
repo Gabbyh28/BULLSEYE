@@ -2,7 +2,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import * as E from '../js/engine.js';
-import { load, recordLeg, recordMatch, statsFor, exportBackup, readBackup, restoreBackup, photoKey, rivalry, doublesReport } from '../js/storage.js';
+import { load, recordLeg, recordMatch, statsFor, exportBackup, readBackup, restoreBackup, photoKey, rivalry, doublesReport, grantBadges } from '../js/storage.js';
 
 const D = E.makeDart;
 const roster = [
@@ -171,4 +171,11 @@ test('backups carry dart styles and the custom arena, cleaned', () => {
   assert.deepEqual(data.stats.a.dblTargets, { D16: { a: 4, h: 0 } });
   const noTheme = readBackup(JSON.stringify({ app: 'BULLSEYE', data: { prefs: { theme: 'custom' } } })).data;
   assert.equal(noTheme.prefs.theme, 'championship', 'custom without a theme falls back');
+});
+
+test('badges are saved per name and survive a cleaned backup', () => {
+  grantBadges([{ name: 'Ann ', id: 'max' }, { name: 'ann', id: 'ton' }]);
+  assert.deepEqual(Object.keys(load().badges.ann).sort(), ['max', 'ton']);
+  const { data } = readBackup(JSON.stringify({ app: 'BULLSEYE', data: { badges: { Ann: { max: 5, hack: 1 }, x: 'no' } } }));
+  assert.deepEqual(data.badges, { ann: { max: 5 } });
 });

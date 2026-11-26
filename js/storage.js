@@ -1,5 +1,6 @@
 // BULLSEYE — local persistence and player statistics.
 import { isX01 } from './engine.js';
+import { BADGE_IDS } from './achievements.js';
 
 const KEY = 'bullseye:v1';
 
@@ -9,6 +10,7 @@ const defaults = () => ({
   roster: [],
   photos: {},
   darts: {},
+  badges: {},
   match: null,
   lastReport: null,
   stats: {},
@@ -213,6 +215,7 @@ export function resetStats() {
   const data = load();
   data.stats = {};
   data.history = [];
+  data.badges = {};
   save();
 }
 
@@ -229,7 +232,7 @@ export function exportBackup() {
       app: 'BULLSEYE',
       version: 1,
       exportedAt: new Date().toISOString(),
-      data: { prefs: d.prefs, config: d.config, roster: d.roster, photos: d.photos, darts: d.darts, stats: d.stats, history: d.history },
+      data: { prefs: d.prefs, config: d.config, roster: d.roster, photos: d.photos, darts: d.darts, badges: d.badges, stats: d.stats, history: d.history },
     },
     null,
     1,
@@ -301,7 +304,14 @@ export function readBackup(text) {
   }
   prefs.customTheme = cleanTheme(src.prefs?.customTheme);
   if (prefs.theme === 'custom' && !prefs.customTheme) prefs.theme = 'championship';
-  const out = { prefs, config, roster, photos, darts, stats, history };
+  const badges = {};
+  for (const [k, v] of Object.entries(src.badges ?? {})) {
+    if (!v || typeof v !== 'object') continue;
+    const got = {};
+    for (const [id, at] of Object.entries(v)) if (BADGE_IDS.includes(id)) got[id] = num(at);
+    if (Object.keys(got).length) badges[photoKey(str(k, 24))] = got;
+  }
+  const out = { prefs, config, roster, photos, darts, badges, stats, history };
   migratePhotos(out);
   return { exportedAt: str(o.exportedAt, 40), data: out };
 }
@@ -360,4 +370,16 @@ export function doublesReport(s, min = 3) {
   const best = solid[0] ?? null;
   const weak = solid.length > 1 ? solid.at(-1) : null;
   return { rows, best, weak: weak && weak.d !== best?.d && weak.pct < best.pct ? weak : null };
+}
+
+/** Save newly earned badges: [{ name, id }], stamped with the time. */
+export function grantBadges(list, at = Date.now()) {
+  const data = load();
+  data.badges ??= {};
+  for (const { name, id } of list) {
+    const k = photoKey(name);
+    data.badges[k] ??= {};
+    data.badges[k][id] ??= at;
+  }
+  save();
 }
