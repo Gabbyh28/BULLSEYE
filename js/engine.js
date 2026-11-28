@@ -2,13 +2,15 @@
 
 export const SECTORS = [20, 1, 18, 4, 13, 6, 10, 15, 2, 17, 3, 19, 7, 16, 8, 11, 14, 9, 12, 5];
 
-// Regulation radii in millimetres (board is drawn in these units).
+// Board radii in millimetres (the board is drawn in these units).
+// The treble, double and bull beds are wider than regulation (8mm rings,
+// 12.7mm bull) so they are easy to hit with a finger or a mouse.
 export const R = {
-  bull: 6.35,
-  outerBull: 15.9,
-  trebleIn: 99,
-  trebleOut: 107,
-  doubleIn: 162,
+  bull: 9,
+  outerBull: 20,
+  trebleIn: 95,
+  trebleOut: 110,
+  doubleIn: 155,
   doubleOut: 170,
 };
 
@@ -153,7 +155,8 @@ function shuffle(arr) {
   return a;
 }
 
-export function createLeg(config, playerIds, starter = 0) {
+/** members: optional { teamId: [playerId, ...] } — team play, teammates alternate throws. */
+export function createLeg(config, playerIds, starter = 0, members = null) {
   const info = modeInfo(config.mode);
   const order = playerIds.slice(starter).concat(playerIds.slice(0, starter));
   const targets = config.mode === 'killer' ? shuffle(SECTORS).slice(0, order.length) : [];
@@ -170,6 +173,8 @@ export function createLeg(config, playerIds, starter = 0) {
       killer: false,
       target: targets[i] ?? null,
       darts: 0,
+      members: members?.[pid] ?? null,
+      next: 0,
     })),
     current: 0,
     round: 1,
@@ -184,6 +189,12 @@ export function createLeg(config, playerIds, starter = 0) {
 }
 
 export const activePlayer = (leg) => leg.players[leg.current];
+
+/** Who actually throws now: the team member whose turn it is, or the player. */
+export function throwerOf(p) {
+  return p.members?.length ? p.members[p.next % p.members.length] : p.pid;
+}
+export const currentThrower = (leg) => throwerOf(activePlayer(leg));
 
 export function aroundTarget(progress) {
   return progress >= 21 ? 25 : progress;
@@ -314,6 +325,7 @@ function endTurn(leg, events) {
   }
   const record = {
     pid: p.pid,
+    thrower: throwerOf(p),
     round: leg.round,
     darts: leg.turn.slice(),
     counted: turnCounted(leg, p),
@@ -322,6 +334,8 @@ function endTurn(leg, events) {
     startScore: leg.turnStart,
     checkout: isX01(leg.mode) && !!leg.winners && leg.winners.includes(p.pid),
     ms: Date.now() - (leg.turnStartedAt ?? Date.now()),
+    // the player's standing after this turn: remaining (X01), points, progress or lives
+    after: leg.mode === 'around' ? Math.min(21, p.progress - 1) : leg.mode === 'killer' ? p.lives : p.score,
   };
   leg.turns.push(record);
   events.push('turn-end');
@@ -339,6 +353,8 @@ const isActive = (leg, p) => leg.mode !== 'killer' || p.lives > 0;
 export function nextTurn(input) {
   const leg = clone(input);
   if (!leg.turnDone || leg.winners) return leg;
+  const done = leg.players[leg.current];
+  if (done.members?.length) done.next = (done.next + 1) % done.members.length; // next teammate throws next time
   let i = leg.current;
   for (let step = 0; step < leg.players.length; step++) {
     i += 1;
@@ -381,8 +397,21 @@ export function targetsFor(leg) {
 
 /* ───────────────────────────── Matches ───────────────────────────── */
 
+/** Teams of two in roster order (1 & 2, 3 & 4, ...), for 4 or 6 players outside knockouts. */
+export function makeTeams(config, roster) {
+  if (!config.teams || config.format === 'tournament' || ![4, 6].includes(roster.length)) return null;
+  const teams = [];
+  for (let k = 0; k < roster.length; k += 2) {
+    const [a, b] = [roster[k], roster[k + 1]];
+    teams.push({ id: 900001 + k / 2, name: `${a.name} & ${b.name}`, members: [a.id, b.id], color: a.color, avatar: a.avatar, team: true });
+  }
+  return teams;
+}
+
 export function createMatch(config, roster) {
-  const ids = roster.map((p) => p.id);
+  const teams = makeTeams(config, roster);
+  const ids = teams ? teams.map((t) => t.id) : roster.map((p) => p.id);
+  const members = teams ? Object.fromEntries(teams.map((t) => [t.id, t.members])) : null;
   const match = {
     config: clone(config),
     roster: clone(roster),
@@ -394,13 +423,17 @@ export function createMatch(config, roster) {
     champion: null,
     finished: false,
     history: [],
+    legLog: [],
+    teams,
+    units: ids,
+    members,
   };
   if (config.format === 'tournament') {
     match.bracket = createBracket(ids);
     const m = activeBracketMatch(match.bracket);
     match.leg = createLeg(config, [m.a, m.b]);
   } else {
-    match.leg = createLeg(config, ids);
+    match.leg = createLeg(config, ids, 0, members);
   }
   return match;
 }
@@ -419,6 +452,17 @@ export function commitLeg(input) {
   const { config } = match;
   const legIds = leg.players.map((p) => p.pid);
   match.history.push({ legNo: match.legNo, winners, mode: leg.mode });
+  // keep every finished leg for the match report (without dart coordinates)
+  match.legLog ??= [];
+  match.legLog.push({
+    legNo: match.legNo,
+    mode: leg.mode,
+    doubleOut: leg.doubleOut,
+    winners,
+    players: leg.players.map((p) => p.pid),
+    start: modeInfo(leg.mode).x01 ?? 0,
+    turns: leg.turns.map((t) => ({ ...t, darts: t.darts.map((d) => ({ value: d.value, mult: d.mult, points: d.points, label: d.label })) })),
+  });
   winners.forEach((w) => (match.legWins[w] = (match.legWins[w] ?? 0) + 1));
 
   const needLegs = legsTarget(config);
@@ -464,8 +508,8 @@ export function commitLeg(input) {
 
   match.legNo += 1;
   match.starter = (match.starter + 1) % legIds.length;
-  const base = config.format === 'tournament' ? legIds : match.roster.map((p) => p.id);
-  match.leg = createLeg(config, base, match.starter % base.length);
+  const base = config.format === 'tournament' ? legIds : match.units ?? match.roster.map((p) => p.id);
+  match.leg = createLeg(config, base, match.starter % base.length, match.members ?? null);
   return { match, outcome };
 }
 

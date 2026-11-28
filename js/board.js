@@ -62,7 +62,7 @@ export class Board {
 
   build() {
     const id = this.id;
-    const svg = el('svg', { viewBox: '-240 -240 480 480', class: 'board-svg', role: 'img' });
+    const svg = el('svg', { viewBox: '-231 -231 462 462', class: 'board-svg', role: 'img' });
     this.svg = svg;
     const defs = el('defs', {}, svg);
     defs.innerHTML = `
@@ -175,7 +175,7 @@ export class Board {
     this.hoverPath = el('path', { class: 'hover-bed', d: '' }, svg);
     this.dartLayer = el('g', { class: 'darts' }, svg);
     this.fxLayer = el('g', { class: 'fx' }, svg);
-    this.catcher = el('circle', { r: 240, fill: 'transparent', class: 'catcher' }, svg);
+    this.catcher = el('circle', { r: 231, fill: 'transparent', class: 'catcher' }, svg);
 
     this.host.appendChild(svg);
   }
@@ -199,6 +199,11 @@ export class Board {
     st.setProperty('--rim-c', s.rim[2]);
     this.svg.classList.toggle('glow', s.glow > 0);
     this.svg.style.setProperty('--glow', s.glow);
+  }
+
+  destroy() {
+    this.svg.remove();
+    this.loupe = null;
   }
 
   setQuality(q) {
@@ -341,10 +346,6 @@ export class Board {
   impact(x, y, dart) {
     const ring = el('circle', { cx: x, cy: y, r: 2, class: `ripple m${dart.mult}` }, this.fxLayer);
     ring.animate([{ r: 2, opacity: 0.9 }, { r: dart.mult >= 2 ? 34 : 22, opacity: 0 }], { duration: 520, easing: 'cubic-bezier(.2,.7,.3,1)' }).onfinish = () => ring.remove();
-    if (dart.value) {
-      const flash = el('path', { d: bedPath(dart), class: `bed-flash m${dart.mult}` }, this.fxLayer);
-      flash.animate([{ opacity: 0.85 }, { opacity: 0 }], { duration: 650, easing: 'ease-out' }).onfinish = () => flash.remove();
-    }
     const tag = el('g', { class: `float-label m${dart.mult}`, transform: `translate(${x} ${y - 24})` }, this.fxLayer);
     const txt = el('text', { 'text-anchor': 'middle', 'dominant-baseline': 'central' }, tag);
     txt.textContent = dart.value ? (dart.points ? `${dart.label}` : dart.label) : 'MISS';

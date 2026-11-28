@@ -2,7 +2,7 @@
 
 let ctx = null;
 let master = null;
-const settings = { sound: true, voice: true, lang: 'en' };
+const settings = { sound: true, voice: true, lang: 'en', voiceName: '' };
 
 export function configureFx(s) {
   Object.assign(settings, s);
@@ -105,32 +105,227 @@ export const sfx = {
     if (!c) return;
     tone(c, { f0: 900, dur: 0.04, gain: 0.05 });
   },
+  /** Badge unlocked: a bright little sparkle run. */
+  unlock() {
+    const c = audio();
+    if (!c) return;
+    [1319, 1568, 2093, 2637].forEach((f, i) => {
+      tone(c, { f0: f, dur: 0.35, gain: 0.06, attack: 0.01, t: i * 0.07 });
+      tone(c, { type: 'triangle', f0: f / 2, dur: 0.3, gain: 0.025, t: i * 0.07 });
+    });
+  },
+  /** Turn change: a soft two-note chime, quiet enough to sit under the caller. */
+  turn() {
+    const c = audio();
+    if (!c) return;
+    tone(c, { f0: 784, dur: 0.42, gain: 0.045, attack: 0.018 });
+    tone(c, { f0: 1568, dur: 0.3, gain: 0.012, attack: 0.018 });
+    tone(c, { f0: 1047, dur: 0.6, gain: 0.04, attack: 0.02, t: 0.11 });
+    tone(c, { f0: 2093, dur: 0.4, gain: 0.01, attack: 0.02, t: 0.11 });
+  },
   whoosh() {
     const c = audio();
     if (!c) return;
     noise(c, { dur: 0.25, gain: 0.08, freq: 900, q: 0.6, swell: true });
   },
+  launch() {
+    const c = audio();
+    if (!c) return;
+    noise(c, { dur: 0.5, gain: 0.05, freq: 2600, q: 0.8, swell: true });
+    tone(c, { type: 'sine', f0: 500, f1: 1400, dur: 0.45, gain: 0.025 });
+  },
+  boom() {
+    const c = audio();
+    if (!c) return;
+    noise(c, { dur: 0.9, gain: 0.32, type: 'lowpass', freq: 380, q: 0.4 });
+    tone(c, { type: 'sine', f0: 90, f1: 38, dur: 0.6, gain: 0.3 });
+    // crackle
+    for (let i = 0; i < 6; i++) noise(c, { t: 0.15 + Math.random() * 0.6, dur: 0.03, gain: 0.08, freq: 3000 + Math.random() * 2000, q: 2 });
+  },
+  /** A stadium roar: layered, swelling crowd noise with a few whistles and whoops. */
+  crowd(level = 1) {
+    const c = audio();
+    if (!c) return;
+    const dur = 1.6 + level * 1.6;
+    noise(c, { dur, gain: 0.16 * level, freq: 900, q: 0.5, swell: true });
+    noise(c, { dur: dur * 0.9, gain: 0.1 * level, freq: 2200, q: 0.9, swell: true, t: 0.08 });
+    noise(c, { dur: dur * 0.8, gain: 0.08 * level, type: 'lowpass', freq: 400, q: 0.3, swell: true, t: 0.04 });
+    const whoops = Math.round(3 + level * 5);
+    for (let i = 0; i < whoops; i++) {
+      const f0 = 500 + Math.random() * 500;
+      tone(c, { type: 'sine', f0, f1: f0 * (1.3 + Math.random() * 0.6), dur: 0.35 + Math.random() * 0.4, gain: 0.018 * level, t: 0.15 + Math.random() * dur * 0.6, attack: 0.05 });
+    }
+  },
+  /** The "Olé!" played on any hit on 1 (same clip as Darts Arena). */
+  ole() {
+    const c = audio();
+    if (!c) return;
+    loadClip('ole').then((buf) => {
+      if (buf) playBuffer(c, buf, 1);
+      else playElement('ole');
+    });
+  },
 };
 
-/* ── Caller voice ── */
-export function say(text) {
-  if (!settings.voice || !('speechSynthesis' in window)) return;
-  try {
-    const u = new SpeechSynthesisUtterance(String(text));
-    const lang = settings.lang === 'he' ? 'he' : 'en';
-    const voices = speechSynthesis.getVoices();
-    const v = voices.find((x) => x.lang?.toLowerCase().startsWith(lang)) ?? null;
-    if (lang === 'he' && !v) {
-      // Fall back to English numerals rather than mispronouncing Hebrew.
-      if (/[֐-׿]/.test(text)) return;
-      u.lang = 'en-GB';
-    } else {
-      u.lang = lang === 'he' ? 'he-IL' : 'en-GB';
-      if (v) u.voice = v;
+/* ── Recorded clips ── */
+// Ogg/Opus first (the original file); MP3 for browsers that can't decode it.
+const CLIPS = { ole: ['sounds/ole.ogg', 'sounds/ole.mp3'] };
+const clipCache = new Map();
+
+export function loadClip(name) {
+  if (clipCache.has(name)) return clipCache.get(name);
+  const job = (async () => {
+    const c = audio();
+    if (!c) return null;
+    for (const url of CLIPS[name] ?? []) {
+      try {
+        const res = await fetch(url);
+        if (!res.ok) continue;
+        const data = await res.arrayBuffer();
+        return await new Promise((ok, fail) => c.decodeAudioData(data, ok, fail));
+      } catch {
+        /* try the next format */
+      }
     }
-    u.rate = 1.02;
-    u.pitch = 0.95;
-    speechSynthesis.cancel();
+    return null;
+  })();
+  clipCache.set(name, job);
+  return job;
+}
+
+function playBuffer(c, buf, gain) {
+  const src = c.createBufferSource();
+  src.buffer = buf;
+  const g = c.createGain();
+  g.gain.value = gain;
+  src.connect(g).connect(master);
+  src.start();
+}
+
+function playElement(name) {
+  try {
+    const a = new Audio();
+    const [ogg, mp3] = CLIPS[name];
+    a.src = a.canPlayType('audio/ogg; codecs=opus') ? ogg : mp3;
+    a.play().catch(() => {});
+  } catch {
+    /* no audio */
+  }
+}
+
+/* ── Caller voice ── */
+let voices = [];
+const loadVoices = () => {
+  try {
+    voices = speechSynthesis.getVoices() || [];
+  } catch {
+    voices = [];
+  }
+};
+if (typeof window !== 'undefined' && 'speechSynthesis' in window) {
+  loadVoices();
+  speechSynthesis.addEventListener?.('voiceschanged', loadVoices);
+}
+
+/**
+ * Speak a line. Lines queue one after another (e.g. "60" then the next
+ * player's name); pass { interrupt: true } to cut off whatever is playing.
+ * Hebrew is spoken with a Hebrew voice when the device has one; otherwise the
+ * line is still sent as he-IL so the system speech engine can handle it.
+ */
+const HEBREW_NAME = /hebrew|carmit|asaf|עברית/i;
+const keepAlive = new Set();
+let unlocked = false;
+
+const normLang = (v) => (v.lang || '').toLowerCase().replace('_', '-');
+const isHebrewVoice = (v) => normLang(v).startsWith('he') || normLang(v).startsWith('iw') || HEBREW_NAME.test(v.name);
+
+/**
+ * How natural a voice is likely to sound. Neural "Natural"/"Online" voices
+ * (Edge, Windows), Apple's Enhanced/Premium voices and Google's voices beat
+ * the basic compact system voices by a long way.
+ */
+function voiceScore(v, hebrew) {
+  const n = `${v.name} ${v.voiceURI || ''}`.toLowerCase();
+  const lang = normLang(v);
+  let s = 0;
+  if (/natural|neural|online/.test(n)) s += 40;
+  if (/premium/.test(n)) s += 30;
+  if (/enhanced|siri/.test(n)) s += 25;
+  if (/google/.test(n)) s += 18;
+  if (/compact|espeak|robot|novelty|whisper|bad news|bells|zarvox|trinoids|albert|jester|organ|cellos|bubbles|boing/.test(n)) s -= 60;
+  if (!v.localService) s += 4; // cloud voices tend to be the neural ones
+  if (hebrew) s += lang === 'he-il' || lang === 'iw-il' ? 6 : 0;
+  else s += lang === 'en-gb' ? 6 : lang === 'en-ie' || lang === 'en-au' ? 4 : lang.startsWith('en-us') ? 3 : 0;
+  return s;
+}
+
+/** Voices for a language, most natural first. */
+export function voiceChoices(lang) {
+  if (!('speechSynthesis' in window)) return [];
+  if (!voices.length) loadVoices();
+  const hebrew = lang === 'he';
+  return voices
+    .filter((v) => (hebrew ? isHebrewVoice(v) : normLang(v).startsWith('en')))
+    .sort((a, b) => voiceScore(b, hebrew) - voiceScore(a, hebrew));
+}
+
+function pickVoice(hebrew) {
+  const list = voiceChoices(hebrew ? 'he' : 'en');
+  if (settings.voiceName) {
+    const chosen = list.find((v) => v.name === settings.voiceName);
+    if (chosen) return chosen;
+  }
+  return list[0] ?? null;
+}
+
+/**
+ * Phones (iOS Safari especially) only allow speech that starts inside a tap.
+ * Speaking a silent line on the first tap unlocks it for the rest of the visit.
+ */
+export function unlockSpeech() {
+  if (unlocked || !('speechSynthesis' in window)) return;
+  unlocked = true;
+  try {
+    loadVoices();
+    const u = new SpeechSynthesisUtterance(' ');
+    u.volume = 0;
+    keepAlive.add(u);
+    u.onend = u.onerror = () => keepAlive.delete(u);
+    speechSynthesis.speak(u);
+  } catch {
+    /* speech not available */
+  }
+}
+
+/** What the caller can do on this device, for the settings screen. */
+export function voiceStatus(lang) {
+  if (!('speechSynthesis' in window)) return { supported: false, voice: null };
+  const v = pickVoice(lang === 'he');
+  return { supported: true, voice: v ? v.name : null };
+}
+
+/**
+ * Speak a line. Lines queue one after another (e.g. "60" then the next
+ * player's name); pass { interrupt: true } to cut off whatever is playing.
+ */
+export function say(text, { interrupt = false, force = false, rate = 1, pitch = 1 } = {}) {
+  if ((!settings.voice && !force) || !('speechSynthesis' in window)) return;
+  try {
+    const line = String(text);
+    const hebrew = settings.lang === 'he' || /[֐-׿]/.test(line);
+    const v = pickVoice(hebrew);
+    const u = new SpeechSynthesisUtterance(line);
+    u.lang = v?.lang?.replace('_', '-') || (hebrew ? 'he-IL' : 'en-GB');
+    if (v) u.voice = v;
+    u.rate = rate;
+    u.pitch = pitch;
+    u.volume = 1;
+    // Chrome drops utterances that get garbage-collected mid-queue.
+    keepAlive.add(u);
+    u.onend = u.onerror = () => keepAlive.delete(u);
+    if (interrupt) speechSynthesis.cancel();
+    if (speechSynthesis.paused) speechSynthesis.resume();
     speechSynthesis.speak(u);
   } catch {
     /* speech not available */
@@ -223,4 +418,140 @@ export function haptic(ms = 12) {
   } catch {
     /* noop */
   }
+}
+
+/* ── Fireworks ── */
+let fwCanvas = null;
+let rockets = [];
+let sparks = [];
+let fwRaf = 0;
+let fwUntil = 0;
+
+/** Rockets launch from the bottom of the screen and burst into glittering shells. */
+export function fireworks(duration = 4200, colors) {
+  if (document.documentElement.dataset.motion === 'off') return;
+  if (!fwCanvas) {
+    fwCanvas = document.createElement('canvas');
+    fwCanvas.className = 'fireworks';
+    document.body.appendChild(fwCanvas);
+  }
+  const css = getComputedStyle(document.documentElement);
+  const palette = colors ?? [css.getPropertyValue('--accent'), css.getPropertyValue('--accent-2'), css.getPropertyValue('--hot'), '#ffffff', '#ffd166'].map((s) => s.trim() || '#fff');
+  const dpr = Math.min(2, devicePixelRatio || 1);
+  fwCanvas.width = innerWidth * dpr;
+  fwCanvas.height = innerHeight * dpr;
+  fwCanvas.dataset.dpr = dpr;
+  fwUntil = performance.now() + duration;
+  const launch = (delay) =>
+    setTimeout(() => {
+      const w = fwCanvas.width;
+      const h = fwCanvas.height;
+      rockets.push({
+        x: w * (0.15 + Math.random() * 0.7),
+        y: h + 10,
+        vx: (Math.random() - 0.5) * 3 * dpr,
+        vy: -(h * 0.0135 + Math.random() * h * 0.004),
+        color: palette[Math.floor(Math.random() * palette.length)],
+        fuse: 0,
+      });
+      sfx.launch?.();
+    }, delay);
+  const count = Math.max(5, Math.round(duration / 380));
+  for (let i = 0; i < count; i++) launch(i * (duration / count) * 0.85 + Math.random() * 180);
+  if (!fwRaf) fwRaf = requestAnimationFrame(fwLoop);
+}
+
+function burst(r) {
+  const dpr = +fwCanvas.dataset.dpr || 1;
+  const n = 70 + Math.floor(Math.random() * 50);
+  const speed = (3.2 + Math.random() * 2.6) * dpr;
+  const ring = Math.random() < 0.3;
+  const second = Math.random() < 0.5 ? '#ffffff' : r.color;
+  for (let i = 0; i < n; i++) {
+    const a = (i / n) * Math.PI * 2 + Math.random() * 0.08;
+    const s = ring ? speed : speed * (0.35 + Math.random() * 0.75);
+    sparks.push({
+      x: r.x,
+      y: r.y,
+      px: r.x,
+      py: r.y,
+      vx: Math.cos(a) * s,
+      vy: Math.sin(a) * s,
+      life: 1,
+      decay: 0.009 + Math.random() * 0.012,
+      color: i % 4 === 0 ? second : r.color,
+      glitter: Math.random() < 0.35,
+    });
+  }
+  sfx.boom?.();
+}
+
+function fwLoop() {
+  const c = fwCanvas.getContext('2d');
+  const dpr = +fwCanvas.dataset.dpr || 1;
+  c.globalCompositeOperation = 'destination-out';
+  c.fillStyle = 'rgba(0,0,0,0.22)';
+  c.fillRect(0, 0, fwCanvas.width, fwCanvas.height);
+  c.globalCompositeOperation = 'lighter';
+  c.lineCap = 'round';
+
+  rockets = rockets.filter((r) => {
+    const px = r.x;
+    const py = r.y;
+    r.x += r.vx;
+    r.y += r.vy;
+    r.vy *= 0.985;
+    r.vy += 0.06 * dpr;
+    c.strokeStyle = '#ffe9c4';
+    c.lineWidth = 2.2 * dpr;
+    c.beginPath();
+    c.moveTo(px, py);
+    c.lineTo(r.x, r.y);
+    c.stroke();
+    if (r.vy > -1.2 * dpr) {
+      burst(r);
+      return false;
+    }
+    return true;
+  });
+
+  sparks = sparks.filter((p) => {
+    p.px = p.x;
+    p.py = p.y;
+    p.vx *= 0.975;
+    p.vy = p.vy * 0.975 + 0.045 * dpr;
+    p.x += p.vx;
+    p.y += p.vy;
+    p.life -= p.decay;
+    if (p.life <= 0) return false;
+    const flick = p.glitter ? (Math.random() < 0.5 ? 1 : 0.25) : 1;
+    c.globalAlpha = Math.max(0, p.life) * flick;
+    c.strokeStyle = p.color;
+    c.lineWidth = (1.4 + p.life * 1.6) * dpr;
+    c.beginPath();
+    c.moveTo(p.px, p.py);
+    c.lineTo(p.x, p.y);
+    c.stroke();
+    return true;
+  });
+  c.globalAlpha = 1;
+
+  if (rockets.length || sparks.length || performance.now() < fwUntil) fwRaf = requestAnimationFrame(fwLoop);
+  else {
+    fwRaf = 0;
+    c.clearRect(0, 0, fwCanvas.width, fwCanvas.height);
+  }
+}
+
+/* ── Winner banner ── */
+export function winnerBanner({ name, label, color = 'var(--accent)', avatar = '🏆', duration = 3200 }) {
+  document.querySelectorAll('.winner-banner').forEach((n) => n.remove());
+  const n = document.createElement('div');
+  n.className = 'winner-banner';
+  n.style.setProperty('--pc', color);
+  const safe = String(name).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[ch]);
+  n.innerHTML = `<div class="wb-inner"><span class="wb-avatar">${avatar}</span><small>${label}</small><strong>${safe}</strong><i class="wb-shine"></i></div>`;
+  document.body.appendChild(n);
+  setTimeout(() => n.classList.add('out'), duration);
+  setTimeout(() => n.remove(), duration + 600);
 }
