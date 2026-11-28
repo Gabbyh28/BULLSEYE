@@ -12,7 +12,7 @@ import { playWalkOn } from './walkon.js';
 import { FLIGHTS, BARRELS, drawFlight, drawDartPreview } from './dartstyle.js';
 import { PRESETS, WALLS, installTheme, expandTheme } from './themes.js';
 import { BADGES, badgeById, earnedBadges } from './achievements.js';
-import { initClips, hasClip, hasOwnClip, clipUrl, saveClip, removeClip, playClip } from './clips.js';
+import { initClips, hasClip, hasOwnClip, clipUrl, saveClip, removeClip, playClip, clipsLock, unlockClips, lockClips, prefetchClip } from './clips.js';
 import { hostRoom, joinRoom, qrSvg, remoteUrl, remoteCodeFromHash } from './remote.js';
 
 const data = load();
@@ -71,7 +71,12 @@ function boot() {
   }
   applyPrefs();
   renderTopbar();
-  initClips().then(() => state.view === 'lobby' && $('#roster') && renderRoster());
+  initClips().then(() => {
+    if (state.view === 'lobby' && $('#roster')) {
+      renderRoster();
+      renderUnlockChip();
+    }
+  });
   let restored = false;
   try {
     restored = sessionStorage.getItem('bullseye:restored') === '1';
@@ -188,6 +193,7 @@ function icon(name) {
     board: '<circle cx="12" cy="12" r="9"/><circle cx="12" cy="12" r="5"/><circle cx="12" cy="12" r="1.5"/>',
     dart: '<path d="M3 21l7-7"/><path d="M10 14l3.5-3.5"/><path d="M13.5 10.5 16 5l3 3-5.5 2.5"/><path d="M16 5l3-2 2 2-2 3"/>',
     palette: '<path d="M12 3a9 9 0 1 0 0 18c1.1 0 1.6-.8 1.6-1.6 0-.5-.2-.9-.5-1.2-.3-.3-.5-.7-.5-1.2 0-.9.7-1.6 1.6-1.6H16a5 5 0 0 0 5-5c0-4-4-7.4-9-7.4Z"/><circle cx="7.5" cy="11" r="1"/><circle cx="10" cy="7" r="1"/><circle cx="14.5" cy="7" r="1"/>',
+    lock: '<rect x="5" y="11" width="14" height="10" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/>',
     film: '<rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 4v16M17 4v16M3 9h4M3 15h4M17 9h4M17 15h4"/>',
     pad: '<rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/>',
   }[name];
@@ -308,6 +314,7 @@ function renderLobby(main) {
 
         <div class="sp-sec">
           <header class="sp-head"><span class="sp-no" dir="ltr">2</span><h2>${t('step2t')}</h2>
+            <span class="unlock-slot" id="unlock-slot"></span>
             <button class="btn ghost sm add-player" data-lobby="add">${icon('plus')} ${t('addPlayer')}</button></header>
           <ol class="roster compact" id="roster"></ol>
         </div>
@@ -332,6 +339,8 @@ function renderLobby(main) {
   renderRoster();
   renderArenas();
   updateSummary();
+  renderUnlockChip();
+  $('#unlock-slot').onclick = (e) => e.target.closest('[data-unlock]') && openUnlock();
 
   // On phones the board is a small emblem: the light 2D board is plenty there.
   const small = matchMedia('(max-width: 699px)').matches;
@@ -597,6 +606,7 @@ function onLobbyClick(e) {
     return;
   } else if (b.dataset.lobby === 'resume') {
     state.undo = restoreUndo(); // undo still works after a reload
+    data.match.roster.forEach((p) => prefetchClip(p.name));
     go('game');
     return;
   } else return;
@@ -745,6 +755,69 @@ function openPhotoMenu(anchor, idx) {
   menu.querySelector('button')?.focus();
 }
 
+/* ── encrypted player videos ── */
+
+function renderUnlockChip() {
+  const slot = $('#unlock-slot');
+  if (!slot) return;
+  const st = clipsLock();
+  slot.innerHTML = st.available && st.locked ? `<button class="btn ghost sm unlock-chip" data-unlock title="${t('clipsLocked')}">${icon('lock')} ${t('clipsUnlock')}</button>` : '';
+}
+
+/** Ask for the group password and unlock the site's player videos on this device. */
+function openUnlock() {
+  openModal(`
+    <form class="unlock" autocomplete="off">
+      <h2>${icon('lock')} ${t('clipsTitle')}</h2>
+      <p class="muted">${t('clipsLocked')}</p>
+      <label class="field"><span class="label">${t('clipsPassword')}</span>
+        <input type="password" class="unlock-pass" autocomplete="current-password" spellcheck="false" autocapitalize="off" required></label>
+      <p class="form-error" id="unlock-error" role="alert"></p>
+      <div class="result-actions">
+        <button type="button" class="btn ghost" data-close>${t('cancel')}</button>
+        <button type="submit" class="btn primary">${t('clipsUnlock')}</button>
+      </div>
+    </form>`);
+  const form = $('.unlock');
+  const input = $('.unlock-pass');
+  setTimeout(() => input.focus(), 60);
+  form.onsubmit = async (e) => {
+    e.preventDefault();
+    const btn = form.querySelector('[type=submit]');
+    btn.disabled = true;
+    btn.textContent = t('clipsWorking');
+    try {
+      const n = await unlockClips(input.value.trim());
+      closeModal();
+      if (state.view === 'lobby') {
+        renderRoster();
+        renderUnlockChip();
+        const err = $('#lobby-error');
+        if (err) err.textContent = '';
+      }
+      if (match()) match().roster.forEach((p) => prefetchClip(p.name));
+      sfx.unlock();
+      state.notice = t('clipsUnlocked', { n });
+      toastNote(`✓ ${t('clipsUnlocked', { n })}`);
+    } catch {
+      btn.disabled = false;
+      btn.textContent = t('clipsUnlock');
+      $('#unlock-error').textContent = t('clipsWrong');
+      input.select();
+    }
+  };
+}
+
+/** A short note at the bottom of the screen (works on any view). */
+function toastNote(text) {
+  const n = document.createElement('div');
+  n.className = 'note-toast';
+  n.textContent = text;
+  document.body.appendChild(n);
+  setTimeout(() => n.classList.add('out'), 2400);
+  setTimeout(() => n.remove(), 2900);
+}
+
 /* ── dart customiser ── */
 
 function openDartCustomiser(p) {
@@ -862,6 +935,7 @@ function startMatch() {
   data.match = newMatch(c, data.roster);
   state.undo = [];
   save();
+  data.roster.forEach((p) => prefetchClip(p.name));
   sfx.whoosh();
   const intro = prefs.walkOn !== false && prefs.motion !== 'off';
   state.intro = intro;
@@ -2318,6 +2392,11 @@ function openSettings() {
       ${row('motion', t('motion'))}
       ${row('walkOn', t('walkOnSetting'))}
       ${row('quality', t('quality'))}
+      ${clipsLock().available ? `<div class="field clips-field"><span class="label">${icon('film')} ${t('clipsTitle')}</span>
+        ${clipsLock().locked
+          ? `<button class="btn ghost sm" data-unlock-open>${icon('lock')} ${t('clipsUnlock')}</button>`
+          : `<span class="clips-ok">✓ ${t('clipsUnlocked', { n: clipsLock().count })}</span><button class="btn ghost sm" data-clips-lock>${t('clipsLock')}</button>`}
+      </div>` : ''}
       <div class="result-actions"><button class="btn primary" data-close>${t('close')}</button></div>
     </div>`);
   const root = $('#modal');
@@ -2346,6 +2425,13 @@ function openSettings() {
         const st = $('#voice-status');
         if (st) st.innerHTML = voiceLine();
       }, 400);
+      return;
+    }
+    if (e.target.closest('[data-unlock-open]')) return openUnlock();
+    if (e.target.closest('[data-clips-lock]')) {
+      lockClips();
+      closeModal();
+      openSettings();
       return;
     }
     const l = e.target.closest('[data-lang]');

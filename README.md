@@ -11,7 +11,7 @@ A live darts scorer with a real-time 3D dartboard (WebGL, falling back to a hand
 - **Checkout routes** for every finish up to 170, aware of how many darts are left
 - **Undo anything:** darts, turns, even a leg-winning dart; or tap one dart of the current turn to fix just that dart (the turn is rescored)
 - **Match report:** a worm chart of every leg, a stats table, key moments and player of the match
-- **Player intro videos:** give a player a short video of themselves throwing (avatar menu → Add intro video). When they throw the winning dart, the cinematic opens on their video, then cuts to the 3D dart landing in the exact winning bed. Videos stay on the device (IndexedDB), matched by name like photos. A private deployment can also ship them in `players/` with a `players/clips.json` manifest (`{"name": "players/file.mp4"}`); that folder is git-ignored so faces never reach the public repo
+- **Player intro videos:** give a player a short video of themselves throwing. When they throw the winning dart, the cinematic opens on their video, then cuts to the 3D dart landing in the exact winning bed. Videos can be added per device (avatar menu → Add intro video), or shipped with the site **encrypted**: `players/` holds only AES-256-GCM files (even the list of names is encrypted), and each device unlocks them once with the group password (lobby → Unlock videos, or Settings). To add or replace videos: `CLIP_PASSWORD='…' node tools/encrypt-clips.mjs players "name=video.mp4" …` (plain videos are git-ignored and never committed)
 - **Achievements:** 27 badges from bronze to legend (180s, Big Fish, Bed & Breakfast, nine-darter, comeback, whitewash, streaks…). New ones appear on the result screen; the Stats page has a trophy cabinet per player. Undoing the winning dart takes them back
 - **Callouts:** 180, ton-plus, bust, game shot, Shanghai, Killer, plus confetti, synthesised sound effects and an optional caller voice
 - **6 arenas, plus your own:** Championship, Neon Night, Old Tavern, Daylight, Carbon Blaze and Candy Royale each restyle the room and the board. The arena builder makes a custom one (dark or light base, accent, board colours, wall, lights) with live preview and seasonal packs: Winter, Summer, Party
@@ -51,7 +51,8 @@ npm test
 | `js/hand.js` | Rigged hand for the winning-dart cinematic, posed into a dart grip with forward kinematics and a small IK pinch |
 | `js/dartstyle.js` | Flight artwork and barrel finishes, shared by the 3D darts and the customiser preview |
 | `js/themes.js` | Custom arena: expands a few choices into board colours, a 3D scene and page colour tokens; seasonal packs |
-| `js/clips.js` | Player intro videos: stored per name in IndexedDB (or shipped with a manifest) and played full screen before the 3D winning throw |
+| `js/clips.js` | Player intro videos: per device (IndexedDB) or shipped encrypted and unlocked with the group password; played full screen before the 3D winning throw |
+| `tools/encrypt-clips.mjs` | Encrypts intro videos for the public site (PBKDF2 + AES-256-GCM) |
 | `js/thrower.js` | The thrower in the winning-dart cinematic: a player in their colours wearing their photo or emoji as a face |
 | `js/achievements.js` | Badge list and the pure rules that decide which badges a finished leg or match earns |
 | `js/board.js` | 2D SVG board: fallback without WebGL, and the stats heatmap |
